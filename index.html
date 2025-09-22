@@ -2,9 +2,34 @@
 <html lang="pt">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>VolumeApp - Mesociclo de Hipertrofia</title>
-    <link rel="stylesheet" href="styles.css">
+
+    <!-- PWA Manifest -->
+    <link rel="manifest" href="/manifest.json">
+
+    <!-- Mobile-specific meta tags -->
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="VolumeApp">
+    <meta name="application-name" content="VolumeApp">
+    <meta name="msapplication-TileColor" content="#667eea">
+    <meta name="theme-color" content="#667eea">
+
+    <!-- Apple Touch Icons -->
+    <link rel="apple-touch-icon" sizes="152x152" href="/icons/icon.svg">
+    <link rel="apple-touch-icon" sizes="180x180" href="/icons/icon.svg">
+
+    <!-- Favicon -->
+    <link rel="icon" type="image/svg+xml" href="/icons/icon.svg">
+    <link rel="icon" type="image/png" sizes="32x32" href="/icons/icon.svg">
+
+    <!-- Preload critical resources -->
+    <link rel="preload" href="styles.css?v=1.4.1" as="style">
+    <link rel="preload" href="script.js?v=1.4.1" as="script">
+
+    <link rel="stylesheet" href="styles.css?v=1.4.1">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
 </head>
@@ -14,15 +39,22 @@
         <header class="header">
             <div class="header-content">
                 <h1><i class="fas fa-dumbbell"></i> VolumeApp</h1>
-                <div class="week-selector">
-                    <label for="week-select">Semana:</label>
-                    <select id="week-select">
-                        <option value="1">Semana 1-2 (MEV)</option>
-                        <option value="3">Semana 3-4 (MAV)</option>
-                        <option value="5">Semana 5 (MAV Alto)</option>
-                        <option value="6">Semana 6 (MRV)</option>
-                        <option value="7">Semana 7 (Deload)</option>
-                    </select>
+                <div class="header-controls">
+                    <div class="week-selector">
+                        <label for="week-select">Semana:</label>
+                        <select id="week-select">
+                            <option value="1">Semana 1-2 (MEV)</option>
+                            <option value="3">Semana 3-4 (MAV)</option>
+                            <option value="5">Semana 5 (MAV Alto)</option>
+                            <option value="6">Semana 6 (MRV)</option>
+                            <option value="7">Semana 7 (Deload)</option>
+                        </select>
+                    </div>
+                    <div class="theme-toggle">
+                        <button id="theme-toggle" class="theme-toggle-btn" onclick="toggleTheme()" title="Alternar tema">
+                            <i class="fas fa-moon"></i>
+                        </button>
+                    </div>
                 </div>
             </div>
         </header>
@@ -193,8 +225,66 @@
                         <span class="stat-value" id="average-rpe">-</span>
                     </div>
                 </div>
+
+                <!-- Finish Workout Button -->
+                <button id="finish-workout-btn" class="finish-workout-btn hidden" onclick="finishWorkout()">
+                    <i class="fas fa-flag-checkered"></i>
+                    Terminar Treino
+                </button>
             </div>
         </main>
+
+        <!-- Floating Action Button -->
+        <button class="fab" id="fab-main" onclick="toggleFabMenu()">
+            <i class="fas fa-plus"></i>
+        </button>
+
+        <!-- FAB Menu (hidden by default) -->
+        <div class="fab-menu" id="fab-menu">
+            <button class="fab fab-secondary" onclick="addSetToCurrentExercise()" title="Adicionar Série">
+                <i class="fas fa-plus-circle"></i>
+            </button>
+            <button class="fab fab-secondary" onclick="startRestTimer()" title="Iniciar Timer">
+                <i class="fas fa-clock"></i>
+            </button>
+            <button class="fab fab-secondary" onclick="openQuickNotes()" title="Notas Rápidas">
+                <i class="fas fa-sticky-note"></i>
+            </button>
+        </div>
+
+        <!-- Rest Timer Modal -->
+        <div class="modal" id="rest-timer-modal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3>Timer de Descanso</h3>
+                    <button class="close-btn" onclick="closeRestTimer()">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+                <div class="modal-body">
+                    <div class="timer-display">
+                        <div class="timer-time" id="timer-display">02:00</div>
+                        <div class="timer-controls">
+                            <button class="timer-btn" onclick="setTimerDuration(60)">1min</button>
+                            <button class="timer-btn" onclick="setTimerDuration(120)">2min</button>
+                            <button class="timer-btn" onclick="setTimerDuration(180)">3min</button>
+                            <button class="timer-btn" onclick="setTimerDuration(300)">5min</button>
+                        </div>
+                        <div class="timer-actions">
+                            <button class="timer-action-btn start" onclick="startTimer()" id="start-timer-btn">
+                                <i class="fas fa-play"></i> Iniciar
+                            </button>
+                            <button class="timer-action-btn pause" onclick="pauseTimer()" id="pause-timer-btn" style="display: none;">
+                                <i class="fas fa-pause"></i> Pausar
+                            </button>
+                            <button class="timer-action-btn reset" onclick="resetTimer()">
+                                <i class="fas fa-stop"></i> Reset
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
 
         <!-- Exercise Modal -->
         <div class="modal" id="exercise-modal">
@@ -219,6 +309,6 @@
         </div>
     </div>
 
-    <script src="script.js"></script>
+    <script src="script.js?v=1.4.1"></script>
 </body>
 </html>

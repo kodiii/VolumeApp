@@ -100,3 +100,50 @@ logs
 
 # Docker
 .dockerignore
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Build and cache files
+dist/
+build/
+.cache/
+
+# PWA and service worker cache
+sw.js.map
+
+# Test files (if not needed in repo)
+test-*.html
+
+# Temporary files
+*.tmp
+*.temp
+
+# Editor files
+*.sublime-*
+.vscode/settings.json
+.vscode/launch.json
+.vscode/extensions.json
+
+# macOS specific
+.AppleDouble
+.LSOverride
+Icon?
+
+# Windows specific
+desktop.ini
+$RECYCLE.BIN/
+
+# Linux specific
+*~
+.fuse_hidden*
+.directory
+.Trash-*
+
+# Application specific
+clear-cache.js
+create-pwa-assets.js
+create-simple-icon.js
+generate-icons.html

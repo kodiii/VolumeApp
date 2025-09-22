@@ -88,25 +88,158 @@ const exerciseLink = document.getElementById('exercise-link');
 const saveLinkBtn = document.getElementById('save-link');
 const closeModalBtn = document.getElementById('close-modal');
 
+// PWA Installation
+let deferredPrompt;
+let isInstalled = false;
+
+// Theme Management
+function initializeTheme() {
+    // Check for saved theme preference or default to light mode
+    const savedTheme = localStorage.getItem('theme') || 'light';
+    setTheme(savedTheme);
+}
+
+function toggleTheme() {
+    const currentTheme = document.documentElement.getAttribute('data-theme') || 'light';
+    const newTheme = currentTheme === 'light' ? 'dark' : 'light';
+    setTheme(newTheme, true); // Show notification when manually toggling
+
+    // Add switching animation
+    const toggleBtn = document.getElementById('theme-toggle');
+    if (toggleBtn) {
+        toggleBtn.classList.add('switching');
+        setTimeout(() => {
+            toggleBtn.classList.remove('switching');
+        }, 600);
+    }
+}
+
+function setTheme(theme, showNotification = false) {
+    document.documentElement.setAttribute('data-theme', theme);
+    localStorage.setItem('theme', theme);
+
+    // Update toggle button icon
+    const toggleBtn = document.getElementById('theme-toggle');
+    const icon = toggleBtn?.querySelector('i');
+    if (icon) {
+        if (theme === 'dark') {
+            icon.className = 'fas fa-sun';
+            toggleBtn.title = 'Alternar para modo claro';
+        } else {
+            icon.className = 'fas fa-moon';
+            toggleBtn.title = 'Alternar para modo escuro';
+        }
+    }
+
+    // Show theme change notification only if requested and function exists
+    if (showNotification && typeof showToast === 'function') {
+        showToast(`Tema ${theme === 'dark' ? 'escuro' : 'claro'} ativado`, 'success');
+    }
+}
+
 // Initialize App
 document.addEventListener('DOMContentLoaded', async function() {
     console.log('DOM loaded, initializing app...');
-    
+
+    // Initialize theme first
+    initializeTheme();
+
+    // Register service worker
+    await registerServiceWorker();
+
+    // Initialize PWA features
+    initializePWA();
+
     // Initialize workout data first
     initializeWorkoutData();
-    
+
     // Load saved data
     await loadWorkoutData();
-    
+
     // Set up event listeners
     setupEventListeners();
-    
+
+    // Initialize touch gestures
+    initializeTouchGestures();
+    initializePullToRefresh();
+
+    // Initialize touch feedback for interactive elements
+    initializeTouchFeedback();
+
     // Update display
     updateWorkoutDisplay();
     updateProgressSummary();
-    
+
     console.log('App initialization complete');
 });
+
+// Register Service Worker
+async function registerServiceWorker() {
+    if ('serviceWorker' in navigator) {
+        try {
+            const registration = await navigator.serviceWorker.register('/sw.js');
+            console.log('[PWA] Service Worker registered successfully:', registration);
+
+            // Listen for updates
+            registration.addEventListener('updatefound', () => {
+                const newWorker = registration.installing;
+                newWorker.addEventListener('statechange', () => {
+                    if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                        showProgressionToast('Nova versão disponível! Recarregue a página.');
+                    }
+                });
+            });
+
+        } catch (error) {
+            console.error('[PWA] Service Worker registration failed:', error);
+        }
+    }
+}
+
+// Initialize PWA features
+function initializePWA() {
+    // Check if app is installed
+    if (window.matchMedia('(display-mode: standalone)').matches ||
+        window.navigator.standalone === true) {
+        isInstalled = true;
+        document.body.classList.add('pwa-installed');
+    }
+
+    // Listen for install prompt
+    window.addEventListener('beforeinstallprompt', (e) => {
+        console.log('[PWA] Install prompt available');
+        e.preventDefault();
+        deferredPrompt = e;
+
+        // Show install button after a short delay to ensure DOM is ready
+        setTimeout(() => {
+            showInstallButton();
+        }, 1000);
+    });
+
+    // Listen for app installed
+    window.addEventListener('appinstalled', () => {
+        console.log('[PWA] App installed successfully');
+        isInstalled = true;
+        hideInstallButton();
+        showProgressionToast('VolumeApp instalado com sucesso!');
+    });
+
+    // Listen for online/offline events
+    window.addEventListener('online', () => {
+        console.log('[PWA] Back online');
+        showProgressionToast('Conexão restaurada - sincronizando dados...');
+        // Trigger a data refresh
+        setTimeout(() => {
+            refreshWorkoutData();
+        }, 1000);
+    });
+
+    window.addEventListener('offline', () => {
+        console.log('[PWA] Gone offline');
+        showProgressionToast('Modo offline - dados serão sincronizados quando voltar online');
+    });
+}
 
 // Event Listeners
 function setupEventListeners() {
@@ -209,7 +342,21 @@ async function loadWorkoutData() {
         if (response.ok) {
             const data = await response.json();
             console.log(`[DEBUG] Loaded workout data:`, data);
-            workoutData[currentWeek][currentDay] = data;
+
+            // Check if this is an offline error response from service worker
+            if (data.error === 'offline') {
+                console.log(`[DEBUG] Offline mode detected, using existing data or initializing`);
+                showProgressionToast(data.message || 'Modo offline - usando dados locais');
+
+                // If we don't have existing data, initialize it
+                if (!workoutData[currentWeek][currentDay] || Object.keys(workoutData[currentWeek][currentDay]).length === 0) {
+                    initializeWorkoutDataForDay(currentWeek, currentDay);
+                }
+                // Otherwise keep existing data
+            } else {
+                // Valid workout data received
+                workoutData[currentWeek][currentDay] = data;
+            }
         } else if (response.status === 404) {
             console.log(`[DEBUG] No existing data found, initializing new workout data`);
             initializeWorkoutDataForDay(currentWeek, currentDay);
@@ -270,17 +417,25 @@ function initializeWorkoutData() {
 // UI Functions
 async function switchDay(day) {
     currentDay = day;
-    
+
+    // Add haptic feedback
+    triggerHapticFeedback('light');
+
     // Update active tab
     navTabs.forEach(tab => tab.classList.remove('active'));
     const activeTab = document.querySelector(`[data-day="${day}"]`);
     if (activeTab) {
         activeTab.classList.add('active');
+        // Add visual feedback
+        activeTab.classList.add('haptic-feedback');
+        setTimeout(() => {
+            activeTab.classList.remove('haptic-feedback');
+        }, 100);
     }
-    
+
     // Load data for new day
     await loadWorkoutData();
-    
+
     updateWorkoutDisplay();
     updateProgressSummary();
 }
@@ -321,12 +476,23 @@ function createExerciseCard(exercise, exerciseIndex) {
     const card = document.createElement('div');
     card.className = 'exercise-card';
     
-    // Ensure exercise data exists
-    if (!workoutData[currentWeek] || !workoutData[currentWeek][currentDay] || !workoutData[currentWeek][currentDay][exerciseIndex]) {
+    // Ensure exercise data exists and is valid
+    if (!workoutData[currentWeek] ||
+        !workoutData[currentWeek][currentDay] ||
+        !workoutData[currentWeek][currentDay][exerciseIndex] ||
+        workoutData[currentWeek][currentDay].error) {
+        console.log(`[DEBUG] Initializing exercise data for exercise ${exerciseIndex}`);
         initializeWorkoutDataForDay(currentWeek, currentDay);
     }
-    
+
     const exerciseData = workoutData[currentWeek][currentDay][exerciseIndex];
+
+    // Additional safety check
+    if (!exerciseData || !exerciseData.sets) {
+        console.error(`[ERROR] Invalid exercise data for exercise ${exerciseIndex}`, exerciseData);
+        initializeWorkoutDataForDay(currentWeek, currentDay);
+        return document.createElement('div'); // Return empty div as fallback
+    }
     const weekData = weekProgression[currentWeek.toString()];
     
     // Check if exercise is collapsed (default to collapsed)
@@ -348,55 +514,166 @@ function createExerciseCard(exercise, exerciseIndex) {
             </div>
         </div>
         <div class="sets-container ${isCollapsed ? 'collapsed' : ''}">
-            ${exerciseData.sets.map((set, setIndex) => createSetRow(set, setIndex, exerciseIndex)).join('')}
+            ${createSetsTable(exerciseData.sets, exerciseIndex)}
         </div>
     `;
     
     return card;
 }
 
-function createSetRow(set, setIndex, exerciseIndex) {
-    const completedClass = set.completed ? 'completed' : '';
-    const exercise = workoutProgram[currentDay].exercises[exerciseIndex];
-    
-    // Get progression indicator for this set
-    const progressionIndicator = getProgressionIndicator(exerciseIndex, setIndex, exercise);
-    
+// Create mobile-optimized input with increment/decrement buttons
+function createMobileInput(type, value, placeholder, exerciseIndex, setIndex, isCompleted, step = 1) {
+    const inputId = `${type}-${exerciseIndex}-${setIndex}`;
+    const isMobile = window.innerWidth <= 768;
+
+    if (isMobile && !isCompleted) {
+        return `
+            <div class="input-with-controls">
+                <button class="input-control-btn" onclick="decrementValue('${inputId}', ${step}, ${exerciseIndex}, ${setIndex}, '${type}')" type="button">
+                    <i class="fas fa-minus"></i>
+                </button>
+                <input type="number"
+                       id="${inputId}"
+                       class="mobile-input"
+                       value="${value}"
+                       placeholder="${placeholder}"
+                       step="${step}"
+                       min="0"
+                       inputmode="decimal"
+                       onchange="updateSet(${exerciseIndex}, ${setIndex}, '${type}', this.value)"
+                       ${isCompleted ? 'readonly' : ''}>
+                <button class="input-control-btn" onclick="incrementValue('${inputId}', ${step}, ${exerciseIndex}, ${setIndex}, '${type}')" type="button">
+                    <i class="fas fa-plus"></i>
+                </button>
+            </div>
+        `;
+    } else {
+        return `
+            <input type="number"
+                   id="${inputId}"
+                   value="${value}"
+                   placeholder="${placeholder}"
+                   step="${step}"
+                   min="0"
+                   inputmode="decimal"
+                   onchange="updateSet(${exerciseIndex}, ${setIndex}, '${type}', this.value)"
+                   ${isCompleted ? 'readonly' : ''}>
+        `;
+    }
+}
+
+// Increment/Decrement functions for mobile inputs
+function incrementValue(inputId, step, exerciseIndex, setIndex, type) {
+    const input = document.getElementById(inputId);
+    const currentValue = parseFloat(input.value) || 0;
+    const newValue = currentValue + step;
+    input.value = newValue;
+    updateSet(exerciseIndex, setIndex, type, newValue);
+
+    // Add haptic feedback
+    if (navigator.vibrate) {
+        navigator.vibrate(50);
+    }
+}
+
+function decrementValue(inputId, step, exerciseIndex, setIndex, type) {
+    const input = document.getElementById(inputId);
+    const currentValue = parseFloat(input.value) || 0;
+    const newValue = Math.max(0, currentValue - step);
+    input.value = newValue;
+    updateSet(exerciseIndex, setIndex, type, newValue);
+
+    // Add haptic feedback
+    if (navigator.vibrate) {
+        navigator.vibrate(50);
+    }
+}
+
+// Create compact sets cards
+function createSetsTable(sets, exerciseIndex) {
     return `
-        <div class="set-row ${completedClass}">
-            <div class="set-number">
-                ${setIndex + 1}
-                ${progressionIndicator}
-            </div>
-            <div class="input-group">
-                <label>Peso (kg)</label>
-                <input type="number" 
-                       value="${set.weight || ''}" 
-                       onchange="updateSet(${exerciseIndex}, ${setIndex}, 'weight', this.value)"
-                       step="0.5" min="0">
-            </div>
-            <div class="input-group">
-                <label>Reps</label>
-                <input type="number" 
-                       value="${set.reps || ''}" 
-                       onchange="updateSet(${exerciseIndex}, ${setIndex}, 'reps', this.value)"
-                       min="0">
-            </div>
-            <div class="input-group">
-                <label>RPE</label>
-                <select onchange="updateSet(${exerciseIndex}, ${setIndex}, 'rpe', this.value)" class="rpe-select">
-                    ${Array.from({length: 11}, (_, i) => i).map(rpe => 
-                        `<option value="${rpe}" ${set.rpe == rpe ? 'selected' : ''}>${rpe}</option>`
-                    ).join('')}
-                </select>
-            </div>
-            <button class="complete-btn ${set.completed ? 'completed' : ''}" 
-                    onclick="toggleSetComplete(${exerciseIndex}, ${setIndex})">
-                ${set.completed ? 'Completo' : 'Completar'}
-            </button>
+        <div class="sets-cards-container">
+            ${sets.map((set, setIndex) => createCompactSetCard(set, setIndex, exerciseIndex)).join('')}
         </div>
     `;
 }
+
+function createCompactSetCard(set, setIndex, exerciseIndex) {
+    const completedClass = set.completed ? 'completed' : '';
+    const exercise = workoutProgram[currentDay].exercises[exerciseIndex];
+    const progressionIndicator = getProgressionIndicator(exerciseIndex, setIndex, exercise);
+
+    return `
+        <div class="set-card ${completedClass}"
+             data-exercise-index="${exerciseIndex}"
+             data-set-index="${setIndex}"
+             ontouchstart="handleSetTouchStart(event)"
+             ontouchmove="handleSetTouchMove(event)"
+             ontouchend="handleSetTouchEnd(event)">
+
+            <div class="set-content">
+                <div class="set-label">
+                    <span class="set-number">SET ${setIndex + 1}</span>
+                    ${progressionIndicator}
+                </div>
+
+                <div class="set-inputs">
+                    <div class="input-field">
+                        <input type="number"
+                               class="set-input"
+                               value="${set.weight || ''}"
+                               placeholder="kg"
+                               step="0.5"
+                               min="0"
+                               ${set.completed ? 'disabled' : ''}
+                               onchange="updateSet(${exerciseIndex}, ${setIndex}, 'weight', this.value)"
+                               onclick="this.select()">
+                        <label>kg</label>
+                    </div>
+
+                    <div class="input-field">
+                        <input type="number"
+                               class="set-input"
+                               value="${set.reps || ''}"
+                               placeholder="reps"
+                               step="1"
+                               min="0"
+                               ${set.completed ? 'disabled' : ''}
+                               onchange="updateSet(${exerciseIndex}, ${setIndex}, 'reps', this.value)"
+                               onclick="this.select()">
+                        <label>reps</label>
+                    </div>
+
+                    <div class="input-field">
+                        <select class="set-select"
+                                onchange="updateSet(${exerciseIndex}, ${setIndex}, 'rpe', this.value)"
+                                ${set.completed ? 'disabled' : ''}>
+                            ${Array.from({length: 11}, (_, i) => i).map(rpe =>
+                                `<option value="${rpe}" ${set.rpe == rpe ? 'selected' : ''}>${rpe}</option>`
+                            ).join('')}
+                        </select>
+                        <label>RPE</label>
+                    </div>
+                </div>
+
+                <button class="set-complete-btn touch-feedback ${set.completed ? 'completed' : ''}"
+                        onclick="toggleSetComplete(${exerciseIndex}, ${setIndex})"
+                        title="${set.completed ? 'Série completa' : 'Marcar como completa'}">
+                    <i class="fas ${set.completed ? 'fa-check' : 'fa-circle'}"></i>
+                </button>
+            </div>
+
+            <div class="set-delete-action">
+                <button class="delete-btn" onclick="deleteSet(${exerciseIndex}, ${setIndex})">
+                    <i class="fas fa-trash"></i>
+                    <span>Deletar</span>
+                </button>
+            </div>
+        </div>
+    `;
+}
+
+
 
 // Function to get progression indicator for a set
 function getProgressionIndicator(exerciseIndex, setIndex, exercise) {
@@ -522,11 +799,55 @@ async function toggleExerciseCollapse(exerciseIndex) {
     updateWorkoutDisplay();
 }
 
+// Track if user has interacted with the page
+let userHasInteracted = false;
+
+// Listen for first user interaction
+document.addEventListener('click', () => { userHasInteracted = true; }, { once: true });
+document.addEventListener('touchstart', () => { userHasInteracted = true; }, { once: true });
+
+// Haptic feedback helper
+function triggerHapticFeedback(type = 'light') {
+    // Only vibrate if user has interacted with the page
+    if (navigator.vibrate && userHasInteracted) {
+        switch (type) {
+            case 'light':
+                navigator.vibrate(50);
+                break;
+            case 'medium':
+                navigator.vibrate(100);
+                break;
+            case 'heavy':
+                navigator.vibrate([100, 50, 100]);
+                break;
+            case 'success':
+                navigator.vibrate([50, 50, 50]);
+                break;
+            case 'error':
+                navigator.vibrate([200, 100, 200]);
+                break;
+        }
+    }
+}
+
+// Add visual feedback for touch interactions
+function addTouchFeedback(element) {
+    element.addEventListener('touchstart', function() {
+        this.classList.add('haptic-feedback');
+        setTimeout(() => {
+            this.classList.remove('haptic-feedback');
+        }, 100);
+    });
+}
+
 async function toggleSetComplete(exerciseIndex, setIndex) {
     const set = workoutData[currentWeek][currentDay][exerciseIndex].sets[setIndex];
     const exercise = workoutData[currentWeek][currentDay][exerciseIndex];
-    
+
     set.completed = !set.completed;
+
+    // Add haptic feedback
+    triggerHapticFeedback(set.completed ? 'success' : 'light');
     
     // Only save to database when set is marked as completed
     if (set.completed) {
@@ -575,30 +896,111 @@ async function toggleSetComplete(exerciseIndex, setIndex) {
 
 // Progress Summary Functions
 function updateProgressSummary() {
-    const dayData = workoutData[currentWeek][currentDay];
+    const dayData = workoutData[currentWeek] && workoutData[currentWeek][currentDay];
     let totalVolume = 0;
     let completedSets = 0;
     let totalSets = 0;
     let totalRPE = 0;
     let rpeCount = 0;
-    
-    Object.values(dayData).forEach(exercise => {
-        exercise.sets.forEach(set => {
-            totalSets++;
-            if (set.completed) {
-                completedSets++;
-                totalVolume += (set.weight || 0) * (set.reps || 0);
-                if (set.rpe > 0) {
-                    totalRPE += set.rpe;
-                    rpeCount++;
-                }
+
+    // Safety check: ensure dayData exists and is a valid object
+    if (!dayData || typeof dayData !== 'object' || dayData.error) {
+        console.log('[DEBUG] No valid workout data for progress summary, using defaults');
+        document.getElementById('total-volume').textContent = '0 kg';
+        document.getElementById('completed-sets').textContent = '0/0';
+        document.getElementById('average-rpe').textContent = '-';
+        return;
+    }
+
+    try {
+        Object.values(dayData).forEach(exercise => {
+            // Safety check: ensure exercise has sets array
+            if (exercise && exercise.sets && Array.isArray(exercise.sets)) {
+                exercise.sets.forEach(set => {
+                    totalSets++;
+                    if (set && set.completed) {
+                        completedSets++;
+                        totalVolume += (set.weight || 0) * (set.reps || 0);
+                        if (set.rpe > 0) {
+                            totalRPE += set.rpe;
+                            rpeCount++;
+                        }
+                    }
+                });
             }
         });
-    });
-    
-    document.getElementById('total-volume').textContent = `${totalVolume.toFixed(1)} kg`;
-    document.getElementById('completed-sets').textContent = `${completedSets}/${totalSets}`;
-    document.getElementById('average-rpe').textContent = rpeCount > 0 ? (totalRPE / rpeCount).toFixed(1) : '-';
+    } catch (error) {
+        console.error('[ERROR] Error calculating progress summary:', error);
+        console.log('[DEBUG] DayData structure:', dayData);
+    }
+
+    // Update UI elements safely
+    const totalVolumeEl = document.getElementById('total-volume');
+    const completedSetsEl = document.getElementById('completed-sets');
+    const averageRpeEl = document.getElementById('average-rpe');
+
+    if (totalVolumeEl) totalVolumeEl.textContent = `${totalVolume.toFixed(1)} kg`;
+    if (completedSetsEl) completedSetsEl.textContent = `${completedSets}/${totalSets}`;
+    if (averageRpeEl) averageRpeEl.textContent = rpeCount > 0 ? (totalRPE / rpeCount).toFixed(1) : '-';
+
+    // Check if all sets are completed and show/hide finish button
+    checkAndToggleFinishButton(completedSets, totalSets);
+}
+
+// Finish Workout Functions
+function checkAndToggleFinishButton(completedSets, totalSets) {
+    const finishBtn = document.getElementById('finish-workout-btn');
+    if (!finishBtn) return;
+
+    // Show button only if all sets are completed and there are sets to complete
+    if (totalSets > 0 && completedSets === totalSets) {
+        finishBtn.classList.remove('hidden');
+    } else {
+        finishBtn.classList.add('hidden');
+    }
+}
+
+async function finishWorkout() {
+    // Show confirmation dialog
+    const confirmed = confirm('Tem certeza que deseja terminar o treino? Isso irá resetar todas as séries completadas para a próxima sessão.');
+
+    if (!confirmed) return;
+
+    try {
+        // Reset all completion states
+        const dayData = workoutData[currentWeek] && workoutData[currentWeek][currentDay];
+        if (!dayData) return;
+
+        // Reset completed status for all sets
+        Object.values(dayData).forEach(exercise => {
+            if (exercise && exercise.sets && Array.isArray(exercise.sets)) {
+                exercise.sets.forEach(set => {
+                    if (set) {
+                        set.completed = false;
+                    }
+                });
+            }
+        });
+
+        // Save the reset data
+        await saveWorkoutData();
+
+        // Update the display
+        updateWorkoutDisplay();
+        updateProgressSummary();
+
+        // Add haptic feedback
+        triggerHapticFeedback('success');
+
+        // Show success message
+        showProgressionToast('Treino finalizado! Todas as séries foram resetadas para a próxima sessão.');
+
+        console.log('[DEBUG] Workout finished and reset successfully');
+
+    } catch (error) {
+        console.error('[ERROR] Failed to finish workout:', error);
+        showProgressionToast('Erro ao finalizar treino. Tente novamente.');
+    }
 }
 
 // Modal Functions
@@ -994,6 +1396,820 @@ function toggleGlossary() {
     }
 }
 
+// PWA Installation Functions
+function showInstallButton() {
+    if (isInstalled) {
+        console.log('[PWA] App already installed, not showing install button');
+        return;
+    }
+
+    // Check if user dismissed the install prompt in this session
+    if (sessionStorage.getItem('pwa-install-dismissed') === 'true') {
+        console.log('[PWA] Install prompt was dismissed in this session');
+        return;
+    }
+
+    // Check if button already exists
+    if (document.getElementById('install-btn')) {
+        console.log('[PWA] Install button already exists');
+        return;
+    }
+
+    const headerContent = document.querySelector('.header-content');
+    if (!headerContent) {
+        console.error('[PWA] Header content not found, retrying in 500ms');
+        setTimeout(showInstallButton, 500);
+        return;
+    }
+
+    console.log('[PWA] Creating install button');
+    const installBtn = document.createElement('button');
+    installBtn.id = 'install-btn';
+    installBtn.className = 'install-btn touch-feedback';
+    installBtn.innerHTML = '<i class="fas fa-download"></i> Instalar App';
+    installBtn.onclick = installApp;
+    installBtn.title = 'Instalar VolumeApp como aplicativo nativo';
+
+    headerContent.appendChild(installBtn);
+
+    console.log('[PWA] Install button added successfully');
+}
+
+function hideInstallButton() {
+    const installBtn = document.getElementById('install-btn');
+    if (installBtn) {
+        installBtn.remove();
+    }
+}
+
+async function installApp() {
+    if (!deferredPrompt) {
+        console.log('[PWA] No deferred prompt available');
+        showProgressionToast('Instalação não disponível neste momento');
+        return;
+    }
+
+    try {
+        console.log('[PWA] Showing install prompt');
+
+        // Show the install prompt
+        await deferredPrompt.prompt();
+
+        // Wait for the user's choice
+        const { outcome } = await deferredPrompt.userChoice;
+
+        console.log('[PWA] User choice:', outcome);
+
+        if (outcome === 'accepted') {
+            console.log('[PWA] User accepted the install prompt');
+            showProgressionToast('Instalando VolumeApp...');
+            triggerHapticFeedback('success');
+        } else {
+            console.log('[PWA] User dismissed the install prompt');
+            showProgressionToast('Instalação cancelada');
+            triggerHapticFeedback('light');
+
+            // Mark as dismissed to prevent showing again immediately
+            sessionStorage.setItem('pwa-install-dismissed', 'true');
+        }
+
+        // Clear the deferred prompt
+        deferredPrompt = null;
+        hideInstallButton();
+
+    } catch (error) {
+        console.error('[PWA] Install prompt failed:', error);
+        showProgressionToast('Erro na instalação: ' + error.message);
+        triggerHapticFeedback('error');
+    }
+}
+
+// Touch Gesture Support
+let touchStartX = 0;
+let touchStartY = 0;
+let touchEndX = 0;
+let touchEndY = 0;
+let isScrolling = false;
+
+function initializeTouchGestures() {
+    const container = document.querySelector('.app-container');
+
+    container.addEventListener('touchstart', handleTouchStart, { passive: true });
+    container.addEventListener('touchmove', handleTouchMove, { passive: false });
+    container.addEventListener('touchend', handleTouchEnd, { passive: true });
+}
+
+function handleTouchStart(e) {
+    touchStartX = e.touches[0].clientX;
+    touchStartY = e.touches[0].clientY;
+    isScrolling = false;
+}
+
+function handleTouchMove(e) {
+    if (!touchStartX || !touchStartY) return;
+
+    const touchCurrentX = e.touches[0].clientX;
+    const touchCurrentY = e.touches[0].clientY;
+
+    const diffX = Math.abs(touchCurrentX - touchStartX);
+    const diffY = Math.abs(touchCurrentY - touchStartY);
+
+    // Determine if user is scrolling vertically
+    if (diffY > diffX) {
+        isScrolling = true;
+    }
+
+    // Prevent horizontal swipe if scrolling vertically
+    if (!isScrolling && diffX > 30) {
+        e.preventDefault();
+    }
+}
+
+function handleTouchEnd(e) {
+    if (!touchStartX || !touchStartY || isScrolling) {
+        resetTouch();
+        return;
+    }
+
+    touchEndX = e.changedTouches[0].clientX;
+    touchEndY = e.changedTouches[0].clientY;
+
+    handleSwipeGesture();
+    resetTouch();
+}
+
+function handleSwipeGesture() {
+    const diffX = touchStartX - touchEndX;
+    const diffY = touchStartY - touchEndY;
+    const minSwipeDistance = 50;
+
+    // Only handle horizontal swipes
+    if (Math.abs(diffX) > Math.abs(diffY) && Math.abs(diffX) > minSwipeDistance) {
+        if (diffX > 0) {
+            // Swipe left - next day
+            swipeToNextDay();
+        } else {
+            // Swipe right - previous day
+            swipeToPreviousDay();
+        }
+    }
+}
+
+function swipeToNextDay() {
+    const nextDay = currentDay < 5 ? currentDay + 1 : 1;
+    switchDay(nextDay);
+    showProgressionToast(`Dia ${nextDay} - ${workoutProgram[nextDay].name}`);
+}
+
+function swipeToPreviousDay() {
+    const prevDay = currentDay > 1 ? currentDay - 1 : 5;
+    switchDay(prevDay);
+    showProgressionToast(`Dia ${prevDay} - ${workoutProgram[prevDay].name}`);
+}
+
+function resetTouch() {
+    touchStartX = 0;
+    touchStartY = 0;
+    touchEndX = 0;
+    touchEndY = 0;
+    isScrolling = false;
+}
+
+// Pull to Refresh
+let pullToRefreshEnabled = true;
+let startY = 0;
+let currentY = 0;
+let pullDistance = 0;
+const pullThreshold = 80;
+let pullContainer = null; // Store container reference globally
+
+function initializePullToRefresh() {
+    // Skip pull-to-refresh on desktop browsers (no touch support)
+    if (!('ontouchstart' in window)) {
+        console.log('[Pull-to-Refresh] Skipping on desktop browser');
+        return;
+    }
+
+    pullContainer = document.querySelector('.main-content');
+
+    if (!pullContainer) {
+        console.warn('[Pull-to-Refresh] Main content container not found');
+        return;
+    }
+
+    pullContainer.addEventListener('touchstart', handlePullStart, { passive: true });
+    pullContainer.addEventListener('touchmove', handlePullMove, { passive: false });
+    pullContainer.addEventListener('touchend', handlePullEnd, { passive: true });
+
+    console.log('[Pull-to-Refresh] Initialized successfully');
+}
+
+function handlePullStart(e) {
+    if (!pullContainer || !e.touches || e.touches.length === 0) return;
+
+    if (pullContainer.scrollTop === 0) {
+        startY = e.touches[0].clientY;
+        pullToRefreshEnabled = true;
+    }
+}
+
+function handlePullMove(e) {
+    if (!pullToRefreshEnabled || !pullContainer || !e.touches || e.touches.length === 0) return;
+
+    currentY = e.touches[0].clientY;
+    pullDistance = currentY - startY;
+
+    if (pullDistance > 0 && pullContainer.scrollTop === 0) {
+        e.preventDefault();
+
+        // Visual feedback for pull to refresh
+        const pullIndicator = document.getElementById('pull-indicator') || createPullIndicator();
+        const progress = Math.min(pullDistance / pullThreshold, 1);
+
+        pullIndicator.style.transform = `translateY(${pullDistance * 0.5}px)`;
+        pullIndicator.style.opacity = progress;
+
+        if (pullDistance > pullThreshold) {
+            pullIndicator.innerHTML = '<i class="fas fa-sync-alt fa-spin"></i> Solte para atualizar';
+        } else {
+            pullIndicator.innerHTML = '<i class="fas fa-arrow-down"></i> Puxe para atualizar';
+        }
+    }
+}
+
+function handlePullEnd(e) {
+    if (!pullToRefreshEnabled) return;
+
+    const pullIndicator = document.getElementById('pull-indicator');
+
+    if (pullDistance > pullThreshold) {
+        // Trigger refresh
+        refreshWorkoutData();
+    }
+
+    // Reset pull indicator
+    if (pullIndicator) {
+        pullIndicator.style.transform = 'translateY(-100%)';
+        pullIndicator.style.opacity = '0';
+    }
+
+    pullToRefreshEnabled = false;
+    startY = 0;
+    currentY = 0;
+    pullDistance = 0;
+}
+
+function createPullIndicator() {
+    const indicator = document.createElement('div');
+    indicator.id = 'pull-indicator';
+    indicator.className = 'pull-indicator';
+    indicator.innerHTML = '<i class="fas fa-arrow-down"></i> Puxe para atualizar';
+
+    document.querySelector('.main-content').prepend(indicator);
+    return indicator;
+}
+
+async function refreshWorkoutData() {
+    try {
+        showProgressionToast('Atualizando dados...');
+        await loadWorkoutData();
+        updateWorkoutDisplay();
+        updateProgressSummary();
+        showProgressionToast('Dados atualizados com sucesso!');
+    } catch (error) {
+        console.error('Error refreshing data:', error);
+        showProgressionToast('Erro ao atualizar dados');
+    }
+}
+
+// Initialize touch feedback for all interactive elements
+function initializeTouchFeedback() {
+    // Add touch feedback to buttons
+    const buttons = document.querySelectorAll('button, .nav-tab, .complete-btn');
+    buttons.forEach(button => {
+        addTouchFeedback(button);
+    });
+
+    // Add touch feedback to inputs when they receive focus
+    const inputs = document.querySelectorAll('input, select');
+    inputs.forEach(input => {
+        input.addEventListener('focus', () => {
+            triggerHapticFeedback('light');
+        });
+    });
+
+    // Re-initialize when new elements are added
+    const observer = new MutationObserver((mutations) => {
+        mutations.forEach((mutation) => {
+            mutation.addedNodes.forEach((node) => {
+                if (node.nodeType === 1) { // Element node
+                    const newButtons = node.querySelectorAll ? node.querySelectorAll('button, .nav-tab, .complete-btn') : [];
+                    newButtons.forEach(button => {
+                        addTouchFeedback(button);
+                    });
+
+                    const newInputs = node.querySelectorAll ? node.querySelectorAll('input, select') : [];
+                    newInputs.forEach(input => {
+                        input.addEventListener('focus', () => {
+                            triggerHapticFeedback('light');
+                        });
+                    });
+                }
+            });
+        });
+    });
+
+    observer.observe(document.body, {
+        childList: true,
+        subtree: true
+    });
+}
+
+// Floating Action Button (FAB) functionality
+let fabMenuOpen = false;
+
+function toggleFabMenu() {
+    const fabMenu = document.getElementById('fab-menu');
+    const fabMain = document.getElementById('fab-main');
+
+    fabMenuOpen = !fabMenuOpen;
+
+    if (fabMenuOpen) {
+        fabMenu.classList.add('open');
+        fabMain.innerHTML = '<i class="fas fa-times"></i>';
+        fabMain.style.transform = 'rotate(45deg)';
+    } else {
+        fabMenu.classList.remove('open');
+        fabMain.innerHTML = '<i class="fas fa-plus"></i>';
+        fabMain.style.transform = 'rotate(0deg)';
+    }
+
+    // Add haptic feedback
+    if (navigator.vibrate) {
+        navigator.vibrate(50);
+    }
+}
+
+// Add a new set to a specific exercise
+async function addSet(exerciseIndex) {
+    try {
+        // Ensure workout data exists
+        if (!workoutData[currentWeek] || !workoutData[currentWeek][currentDay] || !workoutData[currentWeek][currentDay][exerciseIndex]) {
+            initializeWorkoutDataForDay(currentWeek, currentDay);
+        }
+
+        const exerciseData = workoutData[currentWeek][currentDay][exerciseIndex];
+        if (!exerciseData || !exerciseData.sets) {
+            console.error('[ERROR] Invalid exercise data for adding set');
+            return;
+        }
+
+        // Add new set with default values
+        const newSet = {
+            weight: 0,
+            reps: 0,
+            rpe: 0,
+            completed: false
+        };
+
+        exerciseData.sets.push(newSet);
+
+        // Save the updated data
+        await saveWorkoutData();
+
+        // Refresh the display
+        updateWorkoutDisplay();
+        updateProgressSummary();
+
+        console.log(`[DEBUG] Added new set to exercise ${exerciseIndex}`);
+    } catch (error) {
+        console.error('[ERROR] Failed to add set:', error);
+        showProgressionToast('Erro ao adicionar série');
+    }
+}
+
+// Delete a specific set from an exercise
+async function deleteSet(exerciseIndex, setIndex) {
+    try {
+        // Ensure workout data exists
+        if (!workoutData[currentWeek] || !workoutData[currentWeek][currentDay] || !workoutData[currentWeek][currentDay][exerciseIndex]) {
+            console.error('[ERROR] Invalid exercise data for deleting set');
+            return;
+        }
+
+        const exerciseData = workoutData[currentWeek][currentDay][exerciseIndex];
+        if (!exerciseData || !exerciseData.sets || setIndex >= exerciseData.sets.length) {
+            console.error('[ERROR] Invalid set index for deletion');
+            return;
+        }
+
+        // Don't allow deleting if it's the last set
+        if (exerciseData.sets.length <= 1) {
+            showProgressionToast('Não é possível deletar a última série');
+            return;
+        }
+
+        // Confirm deletion
+        if (!confirm(`Deletar SET ${setIndex + 1}?`)) {
+            return;
+        }
+
+        // Remove the set
+        exerciseData.sets.splice(setIndex, 1);
+
+        // Save the updated data
+        await saveWorkoutData();
+
+        // Refresh the display
+        updateWorkoutDisplay();
+        updateProgressSummary();
+
+        // Add haptic feedback
+        triggerHapticFeedback('success');
+        showProgressionToast('Série deletada!');
+
+        console.log(`[DEBUG] Deleted set ${setIndex} from exercise ${exerciseIndex}`);
+    } catch (error) {
+        console.error('[ERROR] Failed to delete set:', error);
+        showProgressionToast('Erro ao deletar série');
+    }
+}
+
+function addSetToCurrentExercise() {
+    // Find the first non-collapsed exercise and add a set
+    const exerciseCards = document.querySelectorAll('.exercise-card');
+    for (let i = 0; i < exerciseCards.length; i++) {
+        const setsContainer = exerciseCards[i].querySelector('.sets-container');
+        if (!setsContainer.classList.contains('collapsed')) {
+            addSet(i);
+            showProgressionToast('Nova série adicionada!');
+            break;
+        }
+    }
+    toggleFabMenu();
+}
+
+// Swipe-to-delete functionality for sets
+let setTouchStartX = 0;
+let setTouchStartY = 0;
+let setTouchEndX = 0;
+let setTouchEndY = 0;
+let currentSwipeCard = null;
+
+function handleSetTouchStart(e) {
+    setTouchStartX = e.touches[0].clientX;
+    setTouchStartY = e.touches[0].clientY;
+    currentSwipeCard = e.currentTarget;
+
+    // Reset any existing swipe state
+    currentSwipeCard.classList.remove('swiping-left', 'delete-revealed');
+}
+
+function handleSetTouchMove(e) {
+    if (!currentSwipeCard) return;
+
+    const touchX = e.touches[0].clientX;
+    const touchY = e.touches[0].clientY;
+    const diffX = setTouchStartX - touchX;
+    const diffY = setTouchStartY - touchY;
+
+    // Only handle horizontal swipes (left swipe to delete)
+    if (Math.abs(diffX) > Math.abs(diffY) && diffX > 0) {
+        e.preventDefault();
+
+        const swipeDistance = Math.min(diffX, 100); // Max 100px swipe
+        currentSwipeCard.style.transform = `translateX(-${swipeDistance}px)`;
+
+        if (swipeDistance > 30) {
+            currentSwipeCard.classList.add('swiping-left');
+        }
+
+        if (swipeDistance > 60) {
+            currentSwipeCard.classList.add('delete-revealed');
+        }
+    }
+}
+
+function handleSetTouchEnd(e) {
+    if (!currentSwipeCard) return;
+
+    setTouchEndX = e.changedTouches[0].clientX;
+    setTouchEndY = e.changedTouches[0].clientY;
+
+    const diffX = setTouchStartX - setTouchEndX;
+    const diffY = setTouchStartY - setTouchEndY;
+
+    // Check if it's a left swipe
+    if (Math.abs(diffX) > Math.abs(diffY) && diffX > 60) {
+        // Reveal delete button
+        if (currentSwipeCard) {
+            currentSwipeCard.classList.add('delete-revealed');
+            currentSwipeCard.style.transform = 'translateX(-80px)';
+        }
+
+        // Auto-hide after 3 seconds
+        setTimeout(() => {
+            if (currentSwipeCard) {
+                resetSetSwipe();
+            }
+        }, 3000);
+    } else {
+        // Reset swipe
+        resetSetSwipe();
+    }
+
+    // Final cleanup with null check
+    if (currentSwipeCard) {
+        currentSwipeCard.classList.remove('swiping-left');
+    }
+}
+
+function resetSetSwipe() {
+    if (currentSwipeCard) {
+        currentSwipeCard.style.transform = 'translateX(0)';
+        currentSwipeCard.classList.remove('swiping-left', 'delete-revealed');
+    }
+    currentSwipeCard = null;
+}
+
+// Enhanced Notes CRUD Operations
+function openQuickNotes() {
+    showNotesModal();
+    toggleFabMenu();
+}
+
+function showNotesModal() {
+    const modal = document.createElement('div');
+    modal.className = 'notes-modal';
+    modal.innerHTML = `
+        <div class="notes-modal-content">
+            <div class="notes-header">
+                <h3>Notas - Semana ${currentWeek}, Dia ${currentDay}</h3>
+                <button class="close-btn" onclick="closeNotesModal()">&times;</button>
+            </div>
+            <div class="notes-body">
+                <div class="add-note-section">
+                    <textarea id="new-note-input" placeholder="Adicionar nova nota..." rows="3"></textarea>
+                    <button onclick="addNote()" class="add-note-btn">
+                        <i class="fas fa-plus"></i> Adicionar Nota
+                    </button>
+                </div>
+                <div class="notes-list" id="notes-list">
+                    ${renderNotesList()}
+                </div>
+            </div>
+        </div>
+    `;
+
+    document.body.appendChild(modal);
+    modal.classList.add('active');
+}
+
+function closeNotesModal() {
+    const modal = document.querySelector('.notes-modal');
+    if (modal) {
+        modal.remove();
+    }
+}
+
+function renderNotesList() {
+    const notes = getNotes();
+    const currentDayNotes = notes.filter(note =>
+        note.week === currentWeek && note.day === currentDay
+    );
+
+    if (currentDayNotes.length === 0) {
+        return '<p class="no-notes">Nenhuma nota para este dia</p>';
+    }
+
+    return currentDayNotes.map((note, index) => `
+        <div class="note-item" data-note-id="${note.id}">
+            <div class="note-content">
+                <p>${note.note}</p>
+                <small>${new Date(note.date).toLocaleString('pt-BR')}</small>
+            </div>
+            <div class="note-actions">
+                <button onclick="editNote('${note.id}')" class="edit-btn">
+                    <i class="fas fa-edit"></i>
+                </button>
+                <button onclick="deleteNote('${note.id}')" class="delete-btn">
+                    <i class="fas fa-trash"></i>
+                </button>
+            </div>
+        </div>
+    `).join('');
+}
+
+function addNote() {
+    const input = document.getElementById('new-note-input');
+    const noteText = input.value.trim();
+
+    if (!noteText) {
+        showProgressionToast('Digite uma nota primeiro');
+        return;
+    }
+
+    const notes = getNotes();
+    const newNote = {
+        id: Date.now().toString(),
+        date: new Date().toISOString(),
+        week: currentWeek,
+        day: currentDay,
+        note: noteText
+    };
+
+    notes.push(newNote);
+    saveNotes(notes);
+
+    input.value = '';
+    updateNotesDisplay();
+    showProgressionToast('Nota adicionada!');
+}
+
+function editNote(noteId) {
+    const notes = getNotes();
+    const note = notes.find(n => n.id === noteId);
+
+    if (!note) return;
+
+    const newText = prompt('Editar nota:', note.note);
+    if (newText !== null && newText.trim() !== '') {
+        note.note = newText.trim();
+        note.date = new Date().toISOString(); // Update timestamp
+        saveNotes(notes);
+        updateNotesDisplay();
+        showProgressionToast('Nota atualizada!');
+    }
+}
+
+function deleteNote(noteId) {
+    if (!confirm('Deletar esta nota?')) return;
+
+    const notes = getNotes();
+    const filteredNotes = notes.filter(n => n.id !== noteId);
+    saveNotes(filteredNotes);
+    updateNotesDisplay();
+    showProgressionToast('Nota deletada!');
+}
+
+function getNotes() {
+    return JSON.parse(localStorage.getItem('quickNotes') || '[]');
+}
+
+function saveNotes(notes) {
+    localStorage.setItem('quickNotes', JSON.stringify(notes));
+}
+
+function updateNotesDisplay() {
+    const notesList = document.getElementById('notes-list');
+    if (notesList) {
+        notesList.innerHTML = renderNotesList();
+    }
+}
+
+// Rest Timer functionality
+let restTimer = null;
+let restTimeRemaining = 120; // 2 minutes default
+let restTimerDuration = 120;
+let restTimerRunning = false;
+
+function startRestTimer() {
+    document.getElementById('rest-timer-modal').classList.add('active');
+    toggleFabMenu();
+}
+
+function closeRestTimer() {
+    document.getElementById('rest-timer-modal').classList.remove('active');
+    if (restTimer) {
+        clearInterval(restTimer);
+        restTimer = null;
+        restTimerRunning = false;
+    }
+}
+
+function setTimerDuration(seconds) {
+    restTimerDuration = seconds;
+    restTimeRemaining = seconds;
+    updateTimerDisplay();
+
+    // Update button states
+    document.querySelectorAll('.timer-btn').forEach(btn => btn.classList.remove('active'));
+    event.target.classList.add('active');
+}
+
+function startTimer() {
+    if (restTimerRunning) return;
+
+    restTimerRunning = true;
+    document.getElementById('start-timer-btn').style.display = 'none';
+    document.getElementById('pause-timer-btn').style.display = 'inline-flex';
+
+    restTimer = setInterval(() => {
+        restTimeRemaining--;
+        updateTimerDisplay();
+
+        if (restTimeRemaining <= 0) {
+            timerComplete();
+        }
+    }, 1000);
+}
+
+function pauseTimer() {
+    if (!restTimerRunning) return;
+
+    restTimerRunning = false;
+    clearInterval(restTimer);
+    restTimer = null;
+
+    document.getElementById('start-timer-btn').style.display = 'inline-flex';
+    document.getElementById('pause-timer-btn').style.display = 'none';
+}
+
+function resetTimer() {
+    pauseTimer();
+    restTimeRemaining = restTimerDuration;
+    updateTimerDisplay();
+}
+
+function updateTimerDisplay() {
+    const minutes = Math.floor(restTimeRemaining / 60);
+    const seconds = restTimeRemaining % 60;
+    const display = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+    document.getElementById('timer-display').textContent = display;
+}
+
+function timerComplete() {
+    pauseTimer();
+
+    // Show notification
+    showProgressionToast('Tempo de descanso finalizado!');
+
+    // Vibrate if supported
+    if (navigator.vibrate) {
+        navigator.vibrate([200, 100, 200, 100, 200]);
+    }
+
+    // Play sound if possible
+    try {
+        const audio = new Audio('data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBjiR1/LMeSwFJHfH8N2QQAoUXrTp66hVFApGn+DyvmwhBSuBzvLZiTYIG2m98OScTgwOUarm7blmGgU7k9n1unEiBC13yO/eizEIHWq+8+OWT');
+        audio.play().catch(() => {}); // Ignore errors
+    } catch (e) {}
+
+    // Auto-close after 3 seconds
+    setTimeout(() => {
+        closeRestTimer();
+    }, 3000);
+}
+
+// Debug function to check workout data structure
+function debugWorkoutData() {
+    console.log('[DEBUG] Current workout data structure:');
+    console.log('Current week:', currentWeek);
+    console.log('Current day:', currentDay);
+    console.log('Workout data:', workoutData);
+    console.log('Current day data:', workoutData[currentWeek] && workoutData[currentWeek][currentDay]);
+
+    if (workoutData[currentWeek] && workoutData[currentWeek][currentDay]) {
+        const dayData = workoutData[currentWeek][currentDay];
+        console.log('Day data type:', typeof dayData);
+        console.log('Day data keys:', Object.keys(dayData));
+        console.log('Is error object:', !!dayData.error);
+    }
+}
+
+// Debug function to check PWA status
+function debugPWAStatus() {
+    console.log('[DEBUG] PWA Status:');
+    console.log('Service Worker supported:', 'serviceWorker' in navigator);
+    console.log('Is installed:', isInstalled);
+    console.log('Deferred prompt available:', !!deferredPrompt);
+    console.log('Display mode:', window.matchMedia('(display-mode: standalone)').matches ? 'standalone' : 'browser');
+    console.log('Install button exists:', !!document.getElementById('install-btn'));
+
+    if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.getRegistration().then(registration => {
+            console.log('Service Worker registration:', registration);
+            if (registration) {
+                console.log('SW scope:', registration.scope);
+                console.log('SW state:', registration.active ? registration.active.state : 'none');
+            }
+        });
+    }
+}
+
+// Desktop-friendly refresh function for testing
+function refreshWorkoutData() {
+    console.log('[DEBUG] Refreshing workout data...');
+    loadWorkoutData().then(() => {
+        updateWorkoutDisplay();
+        updateProgressSummary();
+        showProgressionToast('Dados atualizados!');
+    }).catch(error => {
+        console.error('[ERROR] Failed to refresh data:', error);
+        showProgressionToast('Erro ao atualizar dados');
+    });
+}
+
 // Global functions for inline event handlers
 window.updateSet = updateSet;
 window.toggleSetComplete = toggleSetComplete;
@@ -1001,3 +2217,25 @@ window.toggleExerciseCollapse = toggleExerciseCollapse;
 window.openExerciseModal = openExerciseModal;
 window.toggleGlossary = toggleGlossary;
 window.saveWorkoutLink = saveWorkoutLink;
+window.installApp = installApp;
+window.toggleFabMenu = toggleFabMenu;
+window.addSetToCurrentExercise = addSetToCurrentExercise;
+window.openQuickNotes = openQuickNotes;
+window.startRestTimer = startRestTimer;
+window.closeRestTimer = closeRestTimer;
+window.setTimerDuration = setTimerDuration;
+window.startTimer = startTimer;
+window.pauseTimer = pauseTimer;
+window.deleteSet = deleteSet;
+window.closeNotesModal = closeNotesModal;
+window.addNote = addNote;
+window.editNote = editNote;
+window.deleteNote = deleteNote;
+window.toggleTheme = toggleTheme;
+window.resetTimer = resetTimer;
+window.incrementValue = incrementValue;
+window.decrementValue = decrementValue;
+window.debugWorkoutData = debugWorkoutData;
+window.debugPWAStatus = debugPWAStatus;
+window.refreshWorkoutData = refreshWorkoutData;
+window.finishWorkout = finishWorkout;
