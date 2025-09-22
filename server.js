@@ -726,6 +726,28 @@ app.post('/api/workout-link', (req, res) => {
 });
 
 // Serve the main HTML file
+// Health check endpoint for Docker
+app.get('/health', (req, res) => {
+    // Check database connection
+    db.get('SELECT 1', (err) => {
+        if (err) {
+            console.error('[ERROR] Health check failed - database error:', err.message);
+            return res.status(500).json({ 
+                status: 'error', 
+                message: 'Database connection failed',
+                timestamp: new Date().toISOString()
+            });
+        }
+        
+        res.status(200).json({ 
+            status: 'healthy', 
+            message: 'Application is running normally',
+            timestamp: new Date().toISOString(),
+            uptime: process.uptime()
+        });
+    });
+});
+
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'index.html'));
 });
