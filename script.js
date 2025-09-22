@@ -238,19 +238,25 @@ function createExerciseCard(exercise, exerciseIndex) {
     const exerciseData = workoutData[currentWeek][currentDay][exerciseIndex];
     const weekData = weekProgression[currentWeek.toString()];
     
+    // Check if exercise is collapsed (default to collapsed)
+    const isCollapsed = exerciseData.collapsed !== undefined ? exerciseData.collapsed : true;
+    
     card.innerHTML = `
-        <div class="exercise-header">
+        <div class="exercise-header" onclick="toggleExerciseCollapse(${exerciseIndex})">
             <div>
                 <div class="exercise-name">${exercise.name}</div>
                 <div class="exercise-target">${exerciseData.sets.length} séries × ${exercise.reps} reps (${weekData.percentage})</div>
             </div>
             <div class="exercise-actions">
-                <button class="btn-icon" onclick="openExerciseModal('${exercise.name}', ${exerciseIndex})">
+                <button class="btn-icon collapse-btn" onclick="event.stopPropagation(); toggleExerciseCollapse(${exerciseIndex})">
+                    <i class="fas fa-chevron-${isCollapsed ? 'down' : 'up'}"></i>
+                </button>
+                <button class="btn-icon" onclick="event.stopPropagation(); openExerciseModal('${exercise.name}', ${exerciseIndex})">
                     <i class="fas fa-info-circle"></i>
                 </button>
             </div>
         </div>
-        <div class="sets-container">
+        <div class="sets-container ${isCollapsed ? 'collapsed' : ''}">
             ${exerciseData.sets.map((set, setIndex) => createSetRow(set, setIndex, exerciseIndex)).join('')}
         </div>
     `;
@@ -295,7 +301,7 @@ function createSetRow(set, setIndex, exerciseIndex) {
             </div>
             <button class="complete-btn ${set.completed ? 'completed' : ''}" 
                     onclick="toggleSetComplete(${exerciseIndex}, ${setIndex})">
-                ${set.completed ? '✓' : '○'}
+                ${set.completed ? 'Completo' : 'Completar'}
             </button>
         </div>
     `;
@@ -366,6 +372,13 @@ function updateSet(exerciseIndex, setIndex, field, value) {
     
     // Show progression suggestions after updating
     showProgressionSuggestion(exerciseIndex, setIndex, exercise);
+}
+
+function toggleExerciseCollapse(exerciseIndex) {
+    const exerciseData = workoutData[currentWeek][currentDay][exerciseIndex];
+    exerciseData.collapsed = !exerciseData.collapsed;
+    saveWorkoutData();
+    updateWorkoutDisplay();
 }
 
 function toggleSetComplete(exerciseIndex, setIndex) {
@@ -777,6 +790,7 @@ function toggleGlossary() {
 // Global functions for inline event handlers
 window.updateSet = updateSet;
 window.toggleSetComplete = toggleSetComplete;
+window.toggleExerciseCollapse = toggleExerciseCollapse;
 window.openExerciseModal = openExerciseModal;
 window.toggleGlossary = toggleGlossary;
 window.saveWorkoutLink = saveWorkoutLink;
