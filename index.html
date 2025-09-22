@@ -26,19 +26,23 @@
     <link rel="icon" type="image/png" sizes="32x32" href="/icons/icon.svg">
 
     <!-- Preload critical resources -->
-    <link rel="preload" href="styles.css?v=1.4.1" as="style">
-    <link rel="preload" href="script.js?v=1.4.1" as="script">
+    <link rel="preload" href="styles.css?v=1.5.0" as="style">
+    <link rel="preload" href="script.js?v=1.5.0" as="script">
 
-    <link rel="stylesheet" href="styles.css?v=1.4.1">
+    <link rel="stylesheet" href="styles.css?v=1.5.0">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+
+    <!-- Font Awesome with multiple CDN fallbacks -->
+    <link id="fontawesome-primary" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet" crossorigin="anonymous">
+    <link id="fontawesome-fallback1" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet" crossorigin="anonymous" disabled>
+    <link id="fontawesome-fallback2" href="https://unpkg.com/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet" crossorigin="anonymous" disabled>
 </head>
 <body>
     <div class="app-container">
         <!-- Header -->
         <header class="header">
             <div class="header-content">
-                <h1><i class="fas fa-dumbbell"></i> VolumeApp</h1>
+                <h1><i class="fas fa-dumbbell" data-fallback="🏋"></i> VolumeApp</h1>
                 <div class="header-controls">
                     <div class="week-selector">
                         <label for="week-select">Semana:</label>
@@ -52,7 +56,7 @@
                     </div>
                     <div class="theme-toggle">
                         <button id="theme-toggle" class="theme-toggle-btn" onclick="toggleTheme()" title="Alternar tema">
-                            <i class="fas fa-moon"></i>
+                            <i class="fas fa-moon" data-fallback="🌙"></i>
                         </button>
                     </div>
                 </div>
@@ -62,23 +66,23 @@
         <!-- Navigation -->
         <nav class="nav-tabs">
             <button class="nav-tab active" data-day="1">
-                <i class="fas fa-heart"></i>
+                <i class="fas fa-heart" data-fallback="♥"></i>
                 <span>Peito + Costas</span>
             </button>
             <button class="nav-tab" data-day="2">
-                <i class="fas fa-running"></i>
+                <i class="fas fa-running" data-fallback="🏃"></i>
                 <span>Pernas (Quad)</span>
             </button>
             <button class="nav-tab" data-day="3">
-                <i class="fas fa-fist-raised"></i>
+                <i class="fas fa-fist-raised" data-fallback="✊"></i>
                 <span>Ombros + Braços</span>
             </button>
             <button class="nav-tab" data-day="4">
-                <i class="fas fa-walking"></i>
+                <i class="fas fa-walking" data-fallback="🚶"></i>
                 <span>Pernas (Post)</span>
             </button>
             <button class="nav-tab" data-day="5">
-                <i class="fas fa-expand-arrows-alt"></i>
+                <i class="fas fa-expand-arrows-alt" data-fallback="↔"></i>
                 <span>Upper Mix</span>
             </button>
             <button class="nav-tab glossary-tab" onclick="toggleGlossary()">📖 Glossário</button>
@@ -236,19 +240,19 @@
 
         <!-- Floating Action Button -->
         <button class="fab" id="fab-main" onclick="toggleFabMenu()">
-            <i class="fas fa-plus"></i>
+            <i class="fas fa-plus" data-fallback="+"></i>
         </button>
 
         <!-- FAB Menu (hidden by default) -->
         <div class="fab-menu" id="fab-menu">
             <button class="fab fab-secondary" onclick="addSetToCurrentExercise()" title="Adicionar Série">
-                <i class="fas fa-plus-circle"></i>
+                <i class="fas fa-plus-circle" data-fallback="⊕"></i>
             </button>
             <button class="fab fab-secondary" onclick="startRestTimer()" title="Iniciar Timer">
-                <i class="fas fa-clock"></i>
+                <i class="fas fa-clock" data-fallback="⏰"></i>
             </button>
             <button class="fab fab-secondary" onclick="openQuickNotes()" title="Notas Rápidas">
-                <i class="fas fa-sticky-note"></i>
+                <i class="fas fa-sticky-note" data-fallback="📝"></i>
             </button>
         </div>
 
@@ -309,6 +313,6 @@
         </div>
     </div>
 
-    <script src="script.js?v=1.4.1"></script>
+    <script src="script.js?v=1.5.0"></script>
 </body>
 </html>

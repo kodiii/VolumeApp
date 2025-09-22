@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PWA Debug - VolumeApp</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            margin: 20px;
+            background: #f5f5f5;
+        }
+        .debug-container {
+            background: white;
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            max-width: 600px;
+            margin: 0 auto;
+        }
+        .debug-item {
+            margin: 10px 0;
+            padding: 10px;
+            border-radius: 6px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .debug-item.pass {
+            background: #e8f5e8;
+            border-left: 4px solid #4caf50;
+        }
+        .debug-item.fail {
+            background: #ffeaea;
+            border-left: 4px solid #f44336;
+        }
+        .debug-item.warning {
+            background: #fff3e0;
+            border-left: 4px solid #ff9800;
+        }
+        .status {
+            font-weight: bold;
+        }
+        .pass .status { color: #4caf50; }
+        .fail .status { color: #f44336; }
+        .warning .status { color: #ff9800; }
+        button {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            cursor: pointer;
+            margin: 10px 5px;
+            font-size: 14px;
+        }
+        button:hover {
+            background: #5a6fd8;
+        }
+        .info {
+            background: #f0f0f0;
+            padding: 15px;
+            border-radius: 6px;
+            margin: 20px 0;
+            font-size: 14px;
+            line-height: 1.5;
+        }
+        h1 { color: #333; text-align: center; }
+        h2 { color: #555; margin-top: 30px; }
+    </style>
+</head>
+<body>
+    <div class="debug-container">
+        <h1>🔧 PWA Debug Tool</h1>
+        <p>Esta página ajuda a diagnosticar problemas de instalação do PWA VolumeApp.</p>
+        
+        <h2>📋 Verificações Automáticas</h2>
+        <div id="debug-results"></div>
+        
+        <h2>🛠️ Ações de Teste</h2>
+        <button onclick="runDebug()">🔄 Executar Diagnóstico</button>
+        <button onclick="testManifest()">📄 Testar Manifest</button>
+        <button onclick="testServiceWorker()">⚙️ Testar Service Worker</button>
+        <button onclick="showInstallHelp()">❓ Ajuda de Instalação</button>
+        
+        <div class="info">
+            <h3>💡 Dicas para Instalação:</h3>
+            <ul>
+                <li><strong>Chrome/Edge (Android):</strong> Menu (⋮) → "Instalar app" ou "Adicionar à tela inicial"</li>
+                <li><strong>Safari (iOS):</strong> Botão Compartilhar → "Adicionar à Tela de Início"</li>
+                <li><strong>Firefox:</strong> Menu → "Instalar" (se disponível)</li>
+                <li><strong>Requisitos:</strong> HTTPS, Service Worker, Manifest válido</li>
+            </ul>
+        </div>
+        
+        <div id="debug-output"></div>
+    </div>
+
+    <script>
+        function runDebug() {
+            const results = document.getElementById('debug-results');
+            const checks = [];
+            
+            // Check HTTPS
+            const isHTTPS = location.protocol === 'https:' || location.hostname === 'localhost';
+            checks.push({
+                name: 'HTTPS/Localhost',
+                status: isHTTPS ? 'pass' : 'fail',
+                message: isHTTPS ? 'Protocolo seguro ✓' : 'Requer HTTPS ou localhost'
+            });
+            
+            // Check Service Worker support
+            const hasSW = 'serviceWorker' in navigator;
+            checks.push({
+                name: 'Service Worker Support',
+                status: hasSW ? 'pass' : 'fail',
+                message: hasSW ? 'Suportado pelo navegador ✓' : 'Não suportado pelo navegador'
+            });
+            
+            // Check Manifest
+            const manifestLink = document.querySelector('link[rel="manifest"]');
+            checks.push({
+                name: 'Manifest Link',
+                status: manifestLink ? 'pass' : 'fail',
+                message: manifestLink ? 'Link encontrado ✓' : 'Link do manifest não encontrado'
+            });
+            
+            // Check beforeinstallprompt support
+            const hasInstallPrompt = 'beforeinstallprompt' in window;
+            checks.push({
+                name: 'Install Prompt Support',
+                status: hasInstallPrompt ? 'pass' : 'warning',
+                message: hasInstallPrompt ? 'beforeinstallprompt suportado ✓' : 'beforeinstallprompt não suportado (normal no iOS)'
+            });
+            
+            // Check if running in standalone mode
+            const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
+            checks.push({
+                name: 'Modo Standalone',
+                status: isStandalone ? 'pass' : 'warning',
+                message: isStandalone ? 'Executando como app instalado ✓' : 'Executando no navegador'
+            });
+            
+            // Check User Agent
+            const ua = navigator.userAgent;
+            const isIOS = /iPad|iPhone|iPod/.test(ua);
+            const isAndroid = /Android/.test(ua);
+            const browser = isIOS ? 'iOS' : isAndroid ? 'Android' : 'Desktop';
+            checks.push({
+                name: 'Plataforma',
+                status: 'pass',
+                message: `${browser} - ${ua.includes('Chrome') ? 'Chrome' : ua.includes('Safari') ? 'Safari' : ua.includes('Firefox') ? 'Firefox' : 'Outro'}`
+            });
+            
+            results.innerHTML = checks.map(check => `
+                <div class="debug-item ${check.status}">
+                    <span>${check.name}</span>
+                    <span class="status">${check.message}</span>
+                </div>
+            `).join('');
+        }
+        
+        async function testManifest() {
+            const output = document.getElementById('debug-output');
+            try {
+                const response = await fetch('/manifest.json');
+                const manifest = await response.json();
+                output.innerHTML = `
+                    <h3>📄 Manifest.json</h3>
+                    <pre style="background: #f5f5f5; padding: 15px; border-radius: 6px; overflow-x: auto; font-size: 12px;">${JSON.stringify(manifest, null, 2)}</pre>
+                `;
+            } catch (error) {
+                output.innerHTML = `<div class="debug-item fail">Erro ao carregar manifest: ${error.message}</div>`;
+            }
+        }
+        
+        async function testServiceWorker() {
+            const output = document.getElementById('debug-output');
+            if ('serviceWorker' in navigator) {
+                try {
+                    const registration = await navigator.serviceWorker.getRegistration();
+                    output.innerHTML = `
+                        <h3>⚙️ Service Worker</h3>
+                        <div class="debug-item ${registration ? 'pass' : 'fail'}">
+                            <span>Status</span>
+                            <span class="status">${registration ? 'Registrado ✓' : 'Não registrado'}</span>
+                        </div>
+                        ${registration ? `
+                            <div class="debug-item pass">
+                                <span>Scope</span>
+                                <span class="status">${registration.scope}</span>
+                            </div>
+                            <div class="debug-item pass">
+                                <span>Estado</span>
+                                <span class="status">${registration.active ? registration.active.state : 'Inativo'}</span>
+                            </div>
+                        ` : ''}
+                    `;
+                } catch (error) {
+                    output.innerHTML = `<div class="debug-item fail">Erro: ${error.message}</div>`;
+                }
+            } else {
+                output.innerHTML = `<div class="debug-item fail">Service Worker não suportado</div>`;
+            }
+        }
+        
+        function showInstallHelp() {
+            const output = document.getElementById('debug-output');
+            const ua = navigator.userAgent;
+            const isIOS = /iPad|iPhone|iPod/.test(ua);
+            const isAndroid = /Android/.test(ua);
+            
+            let instructions = '';
+            if (isIOS) {
+                instructions = `
+                    <h3>📱 Instruções para iOS (Safari)</h3>
+                    <ol>
+                        <li>Abra o VolumeApp no Safari</li>
+                        <li>Toque no botão <strong>Compartilhar</strong> (ícone de compartilhamento)</li>
+                        <li>Role para baixo e toque em <strong>"Adicionar à Tela de Início"</strong></li>
+                        <li>Toque em <strong>"Adicionar"</strong> para confirmar</li>
+                    </ol>
+                    <p><em>Nota: O iOS não mostra o botão "Instalar App" automaticamente.</em></p>
+                `;
+            } else if (isAndroid) {
+                instructions = `
+                    <h3>🤖 Instruções para Android</h3>
+                    <ol>
+                        <li>Abra o VolumeApp no Chrome ou Edge</li>
+                        <li>Toque no menu (⋮) do navegador</li>
+                        <li>Procure por <strong>"Instalar app"</strong> ou <strong>"Adicionar à tela inicial"</strong></li>
+                        <li>Toque para instalar</li>
+                    </ol>
+                    <p><em>Ou aguarde o banner de instalação aparecer automaticamente.</em></p>
+                `;
+            } else {
+                instructions = `
+                    <h3>💻 Instruções para Desktop</h3>
+                    <ol>
+                        <li>Abra o VolumeApp no Chrome, Edge ou Firefox</li>
+                        <li>Procure pelo ícone de instalação na barra de endereços</li>
+                        <li>Ou vá no menu do navegador e procure por "Instalar"</li>
+                        <li>Clique para instalar como aplicativo</li>
+                    </ol>
+                `;
+            }
+            
+            output.innerHTML = instructions;
+        }
+        
+        // Run initial debug
+        document.addEventListener('DOMContentLoaded', runDebug);
+    </script>
+</body>
+</html>

@@ -75,6 +75,48 @@ let currentDay = 1;
 let currentWeek = 1;
 let workoutData = {};
 
+// Performance optimization variables
+let isUpdating = false;
+let updateQueue = [];
+let cachedElements = new Map();
+
+// Performance utilities
+function debounce(func, wait) {
+    let timeout;
+    return function executedFunction(...args) {
+        const later = () => {
+            clearTimeout(timeout);
+            func(...args);
+        };
+        clearTimeout(timeout);
+        timeout = setTimeout(later, wait);
+    };
+}
+
+function throttle(func, limit) {
+    let inThrottle;
+    return function() {
+        const args = arguments;
+        const context = this;
+        if (!inThrottle) {
+            func.apply(context, args);
+            inThrottle = true;
+            setTimeout(() => inThrottle = false, limit);
+        }
+    }
+}
+
+function getCachedElement(selector) {
+    if (!cachedElements.has(selector)) {
+        cachedElements.set(selector, document.querySelector(selector));
+    }
+    return cachedElements.get(selector);
+}
+
+function clearElementCache() {
+    cachedElements.clear();
+}
+
 // DOM Elements
 const navTabs = document.querySelectorAll('.nav-tab');
 const weekSelect = document.getElementById('week-select');
@@ -137,9 +179,83 @@ function setTheme(theme, showNotification = false) {
     }
 }
 
+// Font Awesome CDN Fallback System
+function initializeFontAwesome() {
+    const primaryLink = document.getElementById('fontawesome-primary');
+    const fallback1 = document.getElementById('fontawesome-fallback1');
+    const fallback2 = document.getElementById('fontawesome-fallback2');
+
+    // Test if Font Awesome loaded successfully
+    function testFontAwesome() {
+        const testElement = document.createElement('i');
+        testElement.className = 'fas fa-heart';
+        testElement.style.position = 'absolute';
+        testElement.style.left = '-9999px';
+        document.body.appendChild(testElement);
+
+        const computedStyle = window.getComputedStyle(testElement, ':before');
+        const fontFamily = computedStyle.getPropertyValue('font-family');
+
+        document.body.removeChild(testElement);
+
+        return fontFamily.includes('Font Awesome') || fontFamily.includes('FontAwesome');
+    }
+
+    // Try fallbacks if primary fails
+    function tryFallback(fallbackElement, nextFallback) {
+        if (!fallbackElement) return;
+
+        fallbackElement.disabled = false;
+
+        setTimeout(() => {
+            if (!testFontAwesome() && nextFallback) {
+                console.warn('[FontAwesome] Trying next fallback...');
+                tryFallback(nextFallback);
+            } else if (!testFontAwesome()) {
+                console.error('[FontAwesome] All CDNs failed, using CSS fallbacks');
+                enableCSSFallbacks();
+            }
+        }, 2000);
+    }
+
+    // CSS fallbacks for icons
+    function enableCSSFallbacks() {
+        console.log('[FontAwesome] Enabling CSS fallbacks...');
+        document.body.classList.add('icon-fallback');
+
+        // Also add specific icon fallbacks for icons without data-fallback attributes
+        const style = document.createElement('style');
+        style.textContent = `
+            .icon-fallback .fa-times:before { content: "✕"; }
+            .icon-fallback .fa-check:before { content: "✓"; }
+            .icon-fallback .fa-play:before { content: "▶"; }
+            .icon-fallback .fa-pause:before { content: "⏸"; }
+            .icon-fallback .fa-stop:before { content: "⏹"; }
+            .icon-fallback .fa-flag-checkered:before { content: "🏁"; }
+            .icon-fallback .fa-trash:before { content: "🗑"; }
+            .icon-fallback .fa-edit:before { content: "✏"; }
+            .icon-fallback .fa-save:before { content: "💾"; }
+            .icon-fallback .fa-download:before { content: "⬇"; }
+        `;
+        document.head.appendChild(style);
+    }
+
+    // Check primary CDN after a delay
+    setTimeout(() => {
+        if (!testFontAwesome()) {
+            console.warn('[FontAwesome] Primary CDN failed, trying fallback...');
+            primaryLink.disabled = true;
+            tryFallback(fallback1, fallback2);
+        }
+    }, 3000);
+}
+
 // Initialize App
 document.addEventListener('DOMContentLoaded', async function() {
     console.log('DOM loaded, initializing app...');
+
+    // Initialize Font Awesome fallback system
+    initializeFontAwesome();
 
     // Initialize theme first
     initializeTheme();
@@ -198,12 +314,18 @@ async function registerServiceWorker() {
 
 // Initialize PWA features
 function initializePWA() {
+    console.log('[PWA] Initializing PWA features...');
+
     // Check if app is installed
     if (window.matchMedia('(display-mode: standalone)').matches ||
         window.navigator.standalone === true) {
         isInstalled = true;
         document.body.classList.add('pwa-installed');
+        console.log('[PWA] App is running in standalone mode');
     }
+
+    // Check PWA installability criteria
+    checkPWAInstallability();
 
     // Listen for install prompt
     window.addEventListener('beforeinstallprompt', (e) => {
@@ -224,6 +346,22 @@ function initializePWA() {
         hideInstallButton();
         showProgressionToast('VolumeApp instalado com sucesso!');
     });
+
+    // For iOS Safari - check if can be added to home screen
+    if (isIOSSafari() && !isInstalled) {
+        console.log('[PWA] iOS Safari detected, showing iOS install instructions');
+        setTimeout(() => {
+            showIOSInstallInstructions();
+        }, 2000);
+    }
+
+    // For browsers that don't support beforeinstallprompt
+    if (!('beforeinstallprompt' in window) && !isInstalled) {
+        console.log('[PWA] Browser does not support beforeinstallprompt');
+        setTimeout(() => {
+            showFallbackInstallButton();
+        }, 2000);
+    }
 
     // Listen for online/offline events
     window.addEventListener('online', () => {
@@ -414,67 +552,96 @@ function initializeWorkoutData() {
     }
 }
 
-// UI Functions
+// UI Functions - Performance optimized
+const debouncedUpdateDisplay = debounce(() => {
+    updateWorkoutDisplay();
+    updateProgressSummary();
+}, 100);
+
 async function switchDay(day) {
+    // Prevent multiple simultaneous switches
+    if (isUpdating || currentDay === day) return;
+
+    isUpdating = true;
     currentDay = day;
 
     // Add haptic feedback
     triggerHapticFeedback('light');
 
-    // Update active tab
-    navTabs.forEach(tab => tab.classList.remove('active'));
-    const activeTab = document.querySelector(`[data-day="${day}"]`);
-    if (activeTab) {
-        activeTab.classList.add('active');
-        // Add visual feedback
-        activeTab.classList.add('haptic-feedback');
-        setTimeout(() => {
-            activeTab.classList.remove('haptic-feedback');
-        }, 100);
+    // Optimized tab switching with requestAnimationFrame
+    requestAnimationFrame(() => {
+        navTabs.forEach(tab => tab.classList.remove('active'));
+        const activeTab = getCachedElement(`[data-day="${day}"]`) || document.querySelector(`[data-day="${day}"]`);
+        if (activeTab) {
+            activeTab.classList.add('active');
+            // Add visual feedback
+            activeTab.classList.add('haptic-feedback');
+            setTimeout(() => {
+                activeTab.classList.remove('haptic-feedback');
+            }, 100);
+        }
+    });
+
+    try {
+        // Load data for new day
+        await loadWorkoutData();
+
+        // Use debounced update to prevent excessive redraws
+        debouncedUpdateDisplay();
+    } catch (error) {
+        console.error('Error switching day:', error);
+    } finally {
+        isUpdating = false;
     }
-
-    // Load data for new day
-    await loadWorkoutData();
-
-    updateWorkoutDisplay();
-    updateProgressSummary();
 }
 
+// Performance optimized display update
 function updateWorkoutDisplay() {
     const workout = workoutProgram[currentDay];
     const weekData = weekProgression[currentWeek.toString()];
-    
+
     // Validate that workout and weekData exist
     if (!workout) {
         console.error(`Workout not found for day ${currentDay}`);
         return;
     }
-    
+
     if (!weekData) {
         console.error(`Week data not found for week ${currentWeek}`);
         return;
     }
-    
-    // Update header
-    workoutTitle.textContent = workout.name;
-    rpeInfo.textContent = `RPE: ${weekData.rpe}`;
-    rpeInfo.className = `rpe-info rpe-${Math.floor(weekData.rpe)}`;
-    
-    // Load saved workout link
-    loadWorkoutLink();
-    
-    // Clear and rebuild exercises
-    exercisesContainer.innerHTML = '';
-    
-    workout.exercises.forEach((exercise, exerciseIndex) => {
-        const exerciseCard = createExerciseCard(exercise, exerciseIndex);
-        exercisesContainer.appendChild(exerciseCard);
+
+    // Use requestAnimationFrame for smooth updates
+    requestAnimationFrame(() => {
+        // Update header
+        workoutTitle.textContent = workout.name;
+        rpeInfo.textContent = `RPE: ${weekData.rpe}`;
+        rpeInfo.className = `rpe-info rpe-${Math.floor(weekData.rpe)}`;
+
+        // Load saved workout link
+        loadWorkoutLink();
+
+        // Use document fragment for efficient DOM manipulation
+        const fragment = document.createDocumentFragment();
+
+        workout.exercises.forEach((exercise, exerciseIndex) => {
+            const exerciseCard = createExerciseCard(exercise, exerciseIndex);
+            fragment.appendChild(exerciseCard);
+        });
+
+        // Single DOM update
+        exercisesContainer.innerHTML = '';
+        exercisesContainer.appendChild(fragment);
+
+        // Clear element cache after DOM changes
+        clearElementCache();
     });
 }
 
 function createExerciseCard(exercise, exerciseIndex) {
     const card = document.createElement('div');
     card.className = 'exercise-card';
+    card.setAttribute('data-exercise-index', exerciseIndex); // For performance optimization
     
     // Ensure exercise data exists and is valid
     if (!workoutData[currentWeek] ||
@@ -506,10 +673,10 @@ function createExerciseCard(exercise, exerciseIndex) {
             </div>
             <div class="exercise-actions">
                 <button class="btn-icon collapse-btn" onclick="event.stopPropagation(); toggleExerciseCollapse(${exerciseIndex})">
-                    <i class="fas fa-chevron-${isCollapsed ? 'down' : 'up'}"></i>
+                    <i class="fas fa-chevron-${isCollapsed ? 'down' : 'up'}" data-fallback="${isCollapsed ? '▼' : '▲'}"></i>
                 </button>
                 <button class="btn-icon" onclick="event.stopPropagation(); openExerciseModal('${exercise.name}', ${exerciseIndex})">
-                    <i class="fas fa-info-circle"></i>
+                    <i class="fas fa-info-circle" data-fallback="ℹ"></i>
                 </button>
             </div>
         </div>
@@ -792,11 +959,52 @@ async function updateSet(exerciseIndex, setIndex, field, value) {
     }
 }
 
+// Performance optimized exercise toggle
 async function toggleExerciseCollapse(exerciseIndex) {
     const exerciseData = workoutData[currentWeek][currentDay][exerciseIndex];
     exerciseData.collapsed = !exerciseData.collapsed;
-    await saveWorkoutData();
-    updateWorkoutDisplay();
+
+    // Immediate UI update for better responsiveness
+    const exerciseCard = document.querySelector(`[data-exercise-index="${exerciseIndex}"]`);
+    if (exerciseCard) {
+        const setsContainer = exerciseCard.querySelector('.sets-container');
+        const collapseBtn = exerciseCard.querySelector('.collapse-btn i');
+
+        if (setsContainer && collapseBtn) {
+            // Use CSS transforms for hardware acceleration
+            if (exerciseData.collapsed) {
+                setsContainer.style.maxHeight = '0';
+                setsContainer.style.opacity = '0';
+                collapseBtn.className = 'fas fa-chevron-down';
+            } else {
+                setsContainer.style.maxHeight = 'none';
+                setsContainer.style.opacity = '1';
+                collapseBtn.className = 'fas fa-chevron-up';
+            }
+        }
+    }
+
+    // Save data asynchronously without blocking UI
+    saveWorkoutData().catch(error => {
+        console.error('Failed to save exercise collapse state:', error);
+        // Revert UI change on error
+        exerciseData.collapsed = !exerciseData.collapsed;
+        if (exerciseCard) {
+            const setsContainer = exerciseCard.querySelector('.sets-container');
+            const collapseBtn = exerciseCard.querySelector('.collapse-btn i');
+            if (setsContainer && collapseBtn) {
+                if (exerciseData.collapsed) {
+                    setsContainer.style.maxHeight = '0';
+                    setsContainer.style.opacity = '0';
+                    collapseBtn.className = 'fas fa-chevron-down';
+                } else {
+                    setsContainer.style.maxHeight = 'none';
+                    setsContainer.style.opacity = '1';
+                    collapseBtn.className = 'fas fa-chevron-up';
+                }
+            }
+        }
+    });
 }
 
 // Track if user has interacted with the page
@@ -1396,6 +1604,118 @@ function toggleGlossary() {
     }
 }
 
+// PWA Helper Functions
+function checkPWAInstallability() {
+    console.log('[PWA] Checking PWA installability criteria...');
+
+    // Check HTTPS
+    const isHTTPS = location.protocol === 'https:' || location.hostname === 'localhost';
+    console.log('[PWA] HTTPS:', isHTTPS);
+
+    // Check Service Worker
+    const hasSW = 'serviceWorker' in navigator;
+    console.log('[PWA] Service Worker support:', hasSW);
+
+    // Check Manifest
+    const manifestLink = document.querySelector('link[rel="manifest"]');
+    console.log('[PWA] Manifest link:', !!manifestLink);
+
+    // Check if running in standalone mode
+    const isStandalone = window.matchMedia('(display-mode: standalone)').matches;
+    console.log('[PWA] Standalone mode:', isStandalone);
+
+    return isHTTPS && hasSW && manifestLink;
+}
+
+function isIOSSafari() {
+    const ua = navigator.userAgent;
+    const isIOS = /iPad|iPhone|iPod/.test(ua);
+    const isSafari = /Safari/.test(ua) && !/Chrome/.test(ua);
+    return isIOS && isSafari;
+}
+
+function showIOSInstallInstructions() {
+    if (sessionStorage.getItem('ios-install-shown') === 'true') {
+        return;
+    }
+
+    const toast = document.createElement('div');
+    toast.className = 'ios-install-toast';
+    toast.innerHTML = `
+        <div class="ios-install-content">
+            <h4>📱 Instalar VolumeApp</h4>
+            <p>Para instalar no iOS:</p>
+            <ol>
+                <li>Toque no botão <strong>Compartilhar</strong> <i class="fas fa-share"></i></li>
+                <li>Selecione <strong>"Adicionar à Tela de Início"</strong></li>
+                <li>Toque em <strong>"Adicionar"</strong></li>
+            </ol>
+            <button onclick="this.parentElement.parentElement.remove()" class="ios-install-close">Entendi</button>
+        </div>
+    `;
+
+    document.body.appendChild(toast);
+    sessionStorage.setItem('ios-install-shown', 'true');
+
+    setTimeout(() => {
+        if (toast.parentElement) {
+            toast.remove();
+        }
+    }, 10000);
+}
+
+function showFallbackInstallButton() {
+    if (isInstalled || document.getElementById('install-btn')) {
+        return;
+    }
+
+    const headerContent = document.querySelector('.header-content');
+    if (!headerContent) {
+        setTimeout(showFallbackInstallButton, 500);
+        return;
+    }
+
+    const installBtn = document.createElement('button');
+    installBtn.id = 'install-btn';
+    installBtn.className = 'install-btn touch-feedback';
+    installBtn.innerHTML = '<i class="fas fa-mobile-alt"></i> Como Instalar';
+    installBtn.onclick = showInstallInstructions;
+    installBtn.title = 'Ver instruções de instalação';
+
+    headerContent.appendChild(installBtn);
+}
+
+function showInstallInstructions() {
+    const instructions = `
+        <div class="install-instructions">
+            <h3>📱 Como Instalar o VolumeApp</h3>
+
+            <div class="browser-instructions">
+                <h4>🌐 Chrome/Edge (Android):</h4>
+                <ol>
+                    <li>Toque no menu (⋮) do navegador</li>
+                    <li>Selecione "Instalar app" ou "Adicionar à tela inicial"</li>
+                    <li>Confirme a instalação</li>
+                </ol>
+
+                <h4>🍎 Safari (iOS):</h4>
+                <ol>
+                    <li>Toque no botão Compartilhar <i class="fas fa-share"></i></li>
+                    <li>Selecione "Adicionar à Tela de Início"</li>
+                    <li>Toque em "Adicionar"</li>
+                </ol>
+
+                <h4>🔧 Outros navegadores:</h4>
+                <p>Procure por opções como "Instalar", "Adicionar à tela inicial" ou "Criar atalho" no menu do navegador.</p>
+            </div>
+
+            <button onclick="closeModal()" class="btn-primary">Entendi</button>
+        </div>
+    `;
+
+    showProgressionToast('Verifique o menu do seu navegador para opções de instalação');
+}
+
 // PWA Installation Functions
 function showInstallButton() {
     if (isInstalled) {
@@ -1491,11 +1811,14 @@ let touchEndX = 0;
 let touchEndY = 0;
 let isScrolling = false;
 
+// Optimized touch gesture handling
+const throttledTouchMove = throttle(handleTouchMove, 16); // ~60fps
+
 function initializeTouchGestures() {
     const container = document.querySelector('.app-container');
 
     container.addEventListener('touchstart', handleTouchStart, { passive: true });
-    container.addEventListener('touchmove', handleTouchMove, { passive: false });
+    container.addEventListener('touchmove', throttledTouchMove, { passive: false });
     container.addEventListener('touchend', handleTouchEnd, { passive: true });
 }
 
@@ -2185,6 +2508,28 @@ function debugPWAStatus() {
     console.log('Deferred prompt available:', !!deferredPrompt);
     console.log('Display mode:', window.matchMedia('(display-mode: standalone)').matches ? 'standalone' : 'browser');
     console.log('Install button exists:', !!document.getElementById('install-btn'));
+    console.log('HTTPS:', location.protocol === 'https:' || location.hostname === 'localhost');
+    console.log('User Agent:', navigator.userAgent);
+    console.log('Is iOS Safari:', isIOSSafari());
+    console.log('beforeinstallprompt supported:', 'beforeinstallprompt' in window);
+
+    // Check manifest
+    const manifestLink = document.querySelector('link[rel="manifest"]');
+    console.log('Manifest link exists:', !!manifestLink);
+    if (manifestLink) {
+        console.log('Manifest href:', manifestLink.href);
+
+        // Try to fetch manifest
+        fetch(manifestLink.href)
+            .then(response => response.json())
+            .then(manifest => {
+                console.log('Manifest loaded successfully:', manifest);
+                console.log('Manifest icons count:', manifest.icons ? manifest.icons.length : 0);
+            })
+            .catch(error => {
+                console.error('Failed to load manifest:', error);
+            });
+    }
 
     if ('serviceWorker' in navigator) {
         navigator.serviceWorker.getRegistration().then(registration => {
@@ -2195,6 +2540,19 @@ function debugPWAStatus() {
             }
         });
     }
+
+    // Show results in a toast for mobile debugging
+    const debugInfo = `
+        PWA Debug Info:
+        • HTTPS: ${location.protocol === 'https:' || location.hostname === 'localhost'}
+        • Service Worker: ${'serviceWorker' in navigator}
+        • Manifest: ${!!manifestLink}
+        • Install Prompt: ${!!deferredPrompt}
+        • iOS Safari: ${isIOSSafari()}
+        • Installed: ${isInstalled}
+    `;
+
+    showProgressionToast(debugInfo, 8000);
 }
 
 // Desktop-friendly refresh function for testing
@@ -2239,3 +2597,5 @@ window.debugWorkoutData = debugWorkoutData;
 window.debugPWAStatus = debugPWAStatus;
 window.refreshWorkoutData = refreshWorkoutData;
 window.finishWorkout = finishWorkout;
+window.showInstallInstructions = showInstallInstructions;
+window.checkPWAInstallability = checkPWAInstallability;

@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Debug Padding - VolumeApp</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background: #f5f5f5;
+        }
+        .debug-container {
+            background: white;
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        .debug-item {
+            margin: 10px 0;
+            padding: 10px;
+            border-radius: 6px;
+            background: #f8f9fa;
+            border-left: 4px solid #007bff;
+        }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            cursor: pointer;
+            margin: 10px 5px;
+            font-size: 14px;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+        .highlight {
+            background: rgba(255, 0, 0, 0.2) !important;
+            border: 2px solid red !important;
+        }
+        .info {
+            background: #e3f2fd;
+            padding: 15px;
+            border-radius: 6px;
+            margin: 20px 0;
+            font-size: 14px;
+            line-height: 1.5;
+        }
+        h1 { color: #333; text-align: center; }
+        h2 { color: #555; margin-top: 30px; }
+        pre {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 6px;
+            overflow-x: auto;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div class="debug-container">
+        <h1>🔧 Padding Debug Tool</h1>
+        <p>Esta ferramenta ajuda a identificar problemas de padding nos exercícios.</p>
+        
+        <h2>🛠️ Ações de Debug</h2>
+        <button onclick="highlightPaddingIssues()">🔍 Destacar Problemas de Padding</button>
+        <button onclick="showPaddingInfo()">📊 Mostrar Info de Padding</button>
+        <button onclick="fixPaddingIssues()">🔧 Forçar Correção de Padding</button>
+        <button onclick="clearHighlights()">🧹 Limpar Destaques</button>
+        
+        <div class="info">
+            <h3>💡 Como usar:</h3>
+            <ol>
+                <li><strong>Abra o VolumeApp</strong> em outra aba</li>
+                <li><strong>Clique em "Destacar Problemas"</strong> para identificar elementos com padding incorreto</li>
+                <li><strong>Use "Mostrar Info"</strong> para ver os valores atuais de padding</li>
+                <li><strong>Clique em "Forçar Correção"</strong> para aplicar padding correto</li>
+            </ol>
+        </div>
+        
+        <div id="debug-output"></div>
+    </div>
+
+    <script>
+        function highlightPaddingIssues() {
+            const output = document.getElementById('debug-output');
+            
+            // Check if we're in the main app
+            if (window.opener || window.parent !== window) {
+                const targetWindow = window.opener || window.parent;
+                const targetDoc = targetWindow.document;
+                
+                const setsContainers = targetDoc.querySelectorAll('.sets-container');
+                const setCards = targetDoc.querySelectorAll('.set-card');
+                
+                let issues = [];
+                
+                setsContainers.forEach((container, index) => {
+                    const computedStyle = targetWindow.getComputedStyle(container);
+                    const padding = computedStyle.padding;
+                    
+                    if (!padding.includes('20px') && !padding.includes('16px') && !padding.includes('14px')) {
+                        container.classList.add('highlight');
+                        issues.push(`Sets Container ${index + 1}: Padding incorreto (${padding})`);
+                    }
+                });
+                
+                setCards.forEach((card, index) => {
+                    const computedStyle = targetWindow.getComputedStyle(card);
+                    const padding = computedStyle.padding;
+                    
+                    if (!padding.includes('12px') && !padding.includes('10px')) {
+                        card.classList.add('highlight');
+                        issues.push(`Set Card ${index + 1}: Padding incorreto (${padding})`);
+                    }
+                });
+                
+                output.innerHTML = `
+                    <h3>🔍 Problemas Encontrados:</h3>
+                    ${issues.length === 0 ? 
+                        '<p style="color: green;">✅ Nenhum problema de padding encontrado!</p>' : 
+                        '<ul>' + issues.map(issue => `<li style="color: red;">${issue}</li>`).join('') + '</ul>'
+                    }
+                `;
+            } else {
+                output.innerHTML = '<p style="color: orange;">⚠️ Abra esta página a partir do VolumeApp ou em uma nova aba junto com o app.</p>';
+            }
+        }
+        
+        function showPaddingInfo() {
+            const output = document.getElementById('debug-output');
+            
+            if (window.opener || window.parent !== window) {
+                const targetWindow = window.opener || window.parent;
+                const targetDoc = targetWindow.document;
+                
+                const setsContainers = targetDoc.querySelectorAll('.sets-container');
+                const setCards = targetDoc.querySelectorAll('.set-card');
+                
+                let info = '<h3>📊 Informações de Padding:</h3>';
+                
+                info += '<h4>Sets Containers:</h4><ul>';
+                setsContainers.forEach((container, index) => {
+                    const computedStyle = targetWindow.getComputedStyle(container);
+                    info += `<li>Container ${index + 1}: ${computedStyle.padding}</li>`;
+                });
+                info += '</ul>';
+                
+                info += '<h4>Set Cards (primeiros 5):</h4><ul>';
+                Array.from(setCards).slice(0, 5).forEach((card, index) => {
+                    const computedStyle = targetWindow.getComputedStyle(card);
+                    info += `<li>Card ${index + 1}: ${computedStyle.padding}</li>`;
+                });
+                info += '</ul>';
+                
+                output.innerHTML = info;
+            } else {
+                output.innerHTML = '<p style="color: orange;">⚠️ Abra esta página a partir do VolumeApp.</p>';
+            }
+        }
+        
+        function fixPaddingIssues() {
+            const output = document.getElementById('debug-output');
+            
+            if (window.opener || window.parent !== window) {
+                const targetWindow = window.opener || window.parent;
+                const targetDoc = targetWindow.document;
+                
+                // Force correct padding
+                const style = targetDoc.createElement('style');
+                style.textContent = `
+                    .sets-container {
+                        padding: 20px !important;
+                        box-sizing: border-box !important;
+                    }
+                    
+                    .set-card {
+                        padding: 12px 16px !important;
+                        margin: 0 !important;
+                        box-sizing: border-box !important;
+                        width: 100% !important;
+                    }
+                    
+                    .sets-cards-container {
+                        margin: 0 !important;
+                        padding: 0 !important;
+                        width: 100% !important;
+                        box-sizing: border-box !important;
+                    }
+                    
+                    @media (max-width: 768px) {
+                        .sets-container {
+                            padding: 16px !important;
+                        }
+                        .set-card {
+                            padding: 12px 16px !important;
+                        }
+                    }
+                    
+                    @media (max-width: 480px) {
+                        .sets-container {
+                            padding: 14px !important;
+                        }
+                        .set-card {
+                            padding: 10px 14px !important;
+                        }
+                    }
+                `;
+                targetDoc.head.appendChild(style);
+                
+                output.innerHTML = '<p style="color: green;">✅ Correções de padding aplicadas! Verifique o app.</p>';
+            } else {
+                output.innerHTML = '<p style="color: orange;">⚠️ Abra esta página a partir do VolumeApp.</p>';
+            }
+        }
+        
+        function clearHighlights() {
+            const output = document.getElementById('debug-output');
+            
+            if (window.opener || window.parent !== window) {
+                const targetWindow = window.opener || window.parent;
+                const targetDoc = targetWindow.document;
+                
+                const highlighted = targetDoc.querySelectorAll('.highlight');
+                highlighted.forEach(el => el.classList.remove('highlight'));
+                
+                output.innerHTML = '<p style="color: blue;">🧹 Destaques removidos.</p>';
+            } else {
+                output.innerHTML = '<p style="color: orange;">⚠️ Abra esta página a partir do VolumeApp.</p>';
+            }
+        }
+        
+        // Auto-run basic check on load
+        document.addEventListener('DOMContentLoaded', () => {
+            setTimeout(showPaddingInfo, 1000);
+        });
+    </script>
+</body>
+</html>
