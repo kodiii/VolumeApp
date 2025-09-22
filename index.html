@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VolumeApp - Mesociclo de Hipertrofia</title>
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-content">
+                <h1><i class="fas fa-dumbbell"></i> VolumeApp</h1>
+                <div class="week-selector">
+                    <label for="week-select">Semana:</label>
+                    <select id="week-select">
+                        <option value="1">Semana 1-2 (MEV)</option>
+                        <option value="3">Semana 3-4 (MAV)</option>
+                        <option value="5">Semana 5 (MAV Alto)</option>
+                        <option value="6">Semana 6 (MRV)</option>
+                        <option value="7">Semana 7 (Deload)</option>
+                    </select>
+                </div>
+            </div>
+        </header>
+
+        <!-- Navigation -->
+        <nav class="nav-tabs">
+            <button class="nav-tab active" data-day="1">
+                <i class="fas fa-heart"></i>
+                <span>Peito + Costas</span>
+            </button>
+            <button class="nav-tab" data-day="2">
+                <i class="fas fa-running"></i>
+                <span>Pernas (Quad)</span>
+            </button>
+            <button class="nav-tab" data-day="3">
+                <i class="fas fa-fist-raised"></i>
+                <span>Ombros + Braços</span>
+            </button>
+            <button class="nav-tab" data-day="4">
+                <i class="fas fa-walking"></i>
+                <span>Pernas (Post)</span>
+            </button>
+            <button class="nav-tab" data-day="5">
+                <i class="fas fa-expand-arrows-alt"></i>
+                <span>Upper Mix</span>
+            </button>
+            <button class="nav-tab glossary-tab" onclick="toggleGlossary()">📖 Glossário</button>
+        </nav>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <div class="workout-header">
+                <div class="workout-header-left">
+                    <h2 id="workout-title">Dia 1 – Peito + Costas</h2>
+                    <div class="workout-link-input">
+                        <label for="workout-link">Link de Instruções:</label>
+                        <input type="url" id="workout-link" placeholder="Cole o link do vídeo ou instruções aqui..." />
+                        <button type="button" class="btn-save-link" onclick="saveWorkoutLink()">
+                            <i class="fas fa-save"></i>
+                        </button>
+                    </div>
+                </div>
+                <div class="workout-header-right">
+                    <div class="workout-info">
+                        <span class="duration"><i class="fas fa-clock"></i> 75min</span>
+                        <span class="rpe-info" id="rpe-info">RPE: 7</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="exercises-container" id="exercises-container">
+                <!-- Exercises will be dynamically loaded here -->
+            </div>
+
+            <!-- Glossary Section -->
+            <div id="glossary-section" class="glossary-section hidden">
+                <div class="glossary-header">
+                    <h2>📖 Glossário de Treino</h2>
+                    <p>Entenda os termos técnicos utilizados no programa</p>
+                </div>
+                
+                <div class="glossary-grid">
+                    <div class="glossary-card">
+                        <h3>RPE (Rate of Perceived Exertion)</h3>
+                        <div class="glossary-content">
+                            <p><strong>Escala de esforço percebido (0-10)</strong></p>
+                            <ul>
+                                <li><strong>RPE 6-7:</strong> Moderado, ainda com várias reps na reserva</li>
+                                <li><strong>RPE 8:</strong> Difícil, 2-3 reps na reserva</li>
+                                <li><strong>RPE 9:</strong> Muito difícil, 1 rep na reserva</li>
+                                <li><strong>RPE 10:</strong> Falha muscular completa</li>
+                            </ul>
+                            <div class="tip">💡 <strong>Dica:</strong> Exercícios compostos nunca devem chegar a RPE 10</div>
+                        </div>
+                    </div>
+
+                    <div class="glossary-card">
+                        <h3>MEV (Minimum Effective Volume)</h3>
+                        <div class="glossary-content">
+                            <p><strong>Volume mínimo que gera progresso</strong></p>
+                            <p>É a menor quantidade de treino necessária para estimular adaptações musculares. Ideal para iniciantes ou fases de manutenção.</p>
+                            <div class="example">📊 <strong>Exemplo:</strong> 8-12 séries por grupo muscular por semana</div>
+                        </div>
+                    </div>
+
+                    <div class="glossary-card">
+                        <h3>MAV (Maximum Adaptive Volume)</h3>
+                        <div class="glossary-content">
+                            <p><strong>Faixa ótima para máximo crescimento</strong></p>
+                            <p>Volume de treino que proporciona os melhores ganhos de hipertrofia sem comprometer a recuperação.</p>
+                            <div class="example">📊 <strong>Exemplo:</strong> 12-20 séries por grupo muscular por semana</div>
+                        </div>
+                    </div>
+
+                    <div class="glossary-card">
+                        <h3>MRV (Maximum Recoverable Volume)</h3>
+                        <div class="glossary-content">
+                            <p><strong>Volume máximo que consegues recuperar</strong></p>
+                            <p>Limite superior de volume de treino que ainda permite recuperação adequada. Acima disso, há overreaching.</p>
+                            <div class="warning">⚠️ <strong>Atenção:</strong> Usar apenas por períodos curtos (1-2 semanas)</div>
+                        </div>
+                    </div>
+
+                    <div class="glossary-card">
+                        <h3>1RM (One Rep Max)</h3>
+                        <div class="glossary-content">
+                            <p><strong>Máximo peso que consegues levantar uma vez</strong></p>
+                            <p>Referência para calcular percentuais de treino. Usado para progressão em exercícios compostos.</p>
+                            <div class="example">📊 <strong>Exemplo:</strong> Se 1RM = 100kg, então 70% = 70kg</div>
+                        </div>
+                    </div>
+
+                    <div class="glossary-card">
+                        <h3>Exercícios Compostos vs Isoladores</h3>
+                        <div class="glossary-content">
+                            <p><strong>Compostos:</strong> Trabalham múltiplos grupos musculares</p>
+                            <ul>
+                                <li>Progressão: Foco no aumento de peso (%1RM)</li>
+                                <li>RPE máximo: 9 (nunca falha)</li>
+                                <li>Exemplos: Agachamento, supino, terra</li>
+                            </ul>
+                            <p><strong>Isoladores:</strong> Trabalham um grupo muscular específico</p>
+                            <ul>
+                                <li>Progressão: Primeiro reps, depois peso</li>
+                                <li>RPE 10: Permitido nas últimas semanas</li>
+                                <li>Exemplos: Rosca bíceps, elevação lateral</li>
+                            </ul>
+                        </div>
+                    </div>
+
+                    <div class="glossary-card">
+                        <h3>Periodização</h3>
+                        <div class="glossary-content">
+                            <p><strong>Organização sistemática do treino</strong></p>
+                            <div class="periodization-flow">
+                                <div class="phase">Semanas 1-2: MEV (Base)</div>
+                                <div class="arrow">→</div>
+                                <div class="phase">Semanas 3-4: MAV (Crescimento)</div>
+                                <div class="arrow">→</div>
+                                <div class="phase">Semana 5: MAV Alto</div>
+                                <div class="arrow">→</div>
+                                <div class="phase">Semana 6: MRV (Pico)</div>
+                                <div class="arrow">→</div>
+                                <div class="phase">Semana 7: Deload (Recuperação)</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="glossary-card">
+                        <h3>Deload</h3>
+                        <div class="glossary-content">
+                            <p><strong>Semana de recuperação ativa</strong></p>
+                            <p>Redução do volume e intensidade para permitir supercompensação e preparar para o próximo ciclo.</p>
+                            <div class="tip">💡 <strong>Benefícios:</strong> Reduz fadiga, previne overtraining, melhora performance</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Progress Summary -->
+            <div class="progress-summary">
+                <h3>Resumo da Sessão</h3>
+                <div class="summary-stats">
+                    <div class="stat">
+                        <span class="stat-label">Volume Total</span>
+                        <span class="stat-value" id="total-volume">0 kg</span>
+                    </div>
+                    <div class="stat">
+                        <span class="stat-label">Séries Completadas</span>
+                        <span class="stat-value" id="completed-sets">0/0</span>
+                    </div>
+                    <div class="stat">
+                        <span class="stat-label">RPE Médio</span>
+                        <span class="stat-value" id="average-rpe">-</span>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <!-- Exercise Modal -->
+        <div class="modal" id="exercise-modal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3 id="modal-exercise-name">Exercício</h3>
+                    <button class="close-btn" id="close-modal">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+                <div class="modal-body">
+                    <div class="exercise-video" id="exercise-video">
+                        <!-- Video/instructions will be loaded here -->
+                    </div>
+                    <div class="exercise-notes">
+                        <label for="exercise-link">Link de Instrução:</label>
+                        <input type="url" id="exercise-link" placeholder="https://youtube.com/watch?v=...">
+                        <button id="save-link">Salvar Link</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
