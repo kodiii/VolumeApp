@@ -89,14 +89,14 @@ const saveLinkBtn = document.getElementById('save-link');
 const closeModalBtn = document.getElementById('close-modal');
 
 // Initialize App
-document.addEventListener('DOMContentLoaded', function() {
+document.addEventListener('DOMContentLoaded', async function() {
     console.log('DOM loaded, initializing app...');
     
     // Initialize workout data first
     initializeWorkoutData();
     
     // Load saved data
-    loadWorkoutData();
+    await loadWorkoutData();
     
     // Set up event listeners
     setupEventListeners();
@@ -112,19 +112,20 @@ document.addEventListener('DOMContentLoaded', function() {
 function setupEventListeners() {
     // Navigation tabs
     navTabs.forEach(tab => {
-        tab.addEventListener('click', () => {
+        tab.addEventListener('click', async () => {
             const day = parseInt(tab.dataset.day);
             if (day && day >= 1 && day <= 5) {
-                switchDay(day);
+                await switchDay(day);
             }
         });
     });
 
     // Week selector
-    weekSelect.addEventListener('change', (e) => {
+    weekSelect.addEventListener('change', async (e) => {
         const week = parseInt(e.target.value);
         if (week && week >= 1 && week <= 7) {
             currentWeek = week;
+            await loadWorkoutData();
             updateWorkoutDisplay();
             updateProgressSummary();
         }
@@ -146,18 +147,114 @@ function setupEventListeners() {
     }
 }
 
-// Local Storage Functions
-function saveWorkoutData() {
-    localStorage.setItem('volumeAppData', JSON.stringify(workoutData));
+// API Functions for SQLite Backend
+async function saveWorkoutData() {
+    try {
+        console.log(`[DEBUG] Saving workout data for week ${currentWeek}, day ${currentDay}`);
+        console.log(`[DEBUG] Data to save:`, workoutData[currentWeek][currentDay]);
+        
+        const response = await fetch('/api/workout', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                week: currentWeek,
+                day: currentDay,
+                workoutData: workoutData[currentWeek][currentDay]
+            })
+        });
+        
+        console.log(`[DEBUG] Save response status: ${response.status}`);
+        
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error(`[ERROR] Save failed with status ${response.status}: ${response.statusText}`);
+            console.error(`[ERROR] Response body:`, errorText);
+            throw new Error(`Failed to save workout data: ${response.status} ${response.statusText}`);
+        }
+        
+        const result = await response.json();
+        console.log(`[DEBUG] Save successful:`, result);
+        
+    } catch (error) {
+        console.error('[ERROR] Error saving workout data:', error);
+        console.error('[ERROR] Error details:', {
+            message: error.message,
+            stack: error.stack,
+            name: error.name,
+            week: currentWeek,
+            day: currentDay
+        });
+        showProgressionToast('Erro ao salvar dados. Verifique a conexão.');
+        throw error; // Re-throw to let calling functions know save failed
+    }
 }
 
-function loadWorkoutData() {
-    const saved = localStorage.getItem('volumeAppData');
-    if (saved) {
-        workoutData = JSON.parse(saved);
-    } else {
-        initializeWorkoutData();
+async function loadWorkoutData() {
+    try {
+        console.log(`[DEBUG] Loading workout data for week ${currentWeek}, day ${currentDay}`);
+        
+        // Initialize the structure first
+        if (!workoutData[currentWeek]) {
+            workoutData[currentWeek] = {};
+        }
+        if (!workoutData[currentWeek][currentDay]) {
+            workoutData[currentWeek][currentDay] = {};
+        }
+        
+        const response = await fetch(`/api/workout/${currentWeek}/${currentDay}`);
+        console.log(`[DEBUG] API response status: ${response.status}`);
+        
+        if (response.ok) {
+            const data = await response.json();
+            console.log(`[DEBUG] Loaded workout data:`, data);
+            workoutData[currentWeek][currentDay] = data;
+        } else if (response.status === 404) {
+            console.log(`[DEBUG] No existing data found, initializing new workout data`);
+            initializeWorkoutDataForDay(currentWeek, currentDay);
+        } else {
+            console.error(`[ERROR] API request failed with status ${response.status}: ${response.statusText}`);
+            const errorText = await response.text();
+            console.error(`[ERROR] Response body:`, errorText);
+            showProgressionToast(`Erro ao carregar dados (${response.status}). Usando dados padrão.`);
+            initializeWorkoutDataForDay(currentWeek, currentDay);
+        }
+    } catch (error) {
+        console.error('[ERROR] Network or parsing error loading workout data:', error);
+        console.error('[ERROR] Error details:', {
+            message: error.message,
+            stack: error.stack,
+            name: error.name
+        });
+        showProgressionToast('Erro de conexão. Usando dados offline.');
+        // Fallback to initialize if API fails
+        initializeWorkoutDataForDay(currentWeek, currentDay);
     }
+}
+
+function initializeWorkoutDataForDay(week, day) {
+    if (!workoutData[week]) {
+        workoutData[week] = {};
+    }
+    if (!workoutData[week][day]) {
+        workoutData[week][day] = {};
+    }
+    
+    workoutProgram[day].exercises.forEach((exercise, exerciseIndex) => {
+        const adjustedSets = Math.ceil(exercise.sets * weekProgression[week.toString()].setsMultiplier);
+        workoutData[week][day][exerciseIndex] = {
+            name: exercise.name,
+            link: exercise.link,
+            collapsed: true, // Default collapsed state
+            sets: Array(adjustedSets).fill().map(() => ({
+                weight: 0,
+                reps: 0,
+                rpe: weekProgression[week.toString()].rpe,
+                completed: false
+            }))
+        };
+    });
 }
 
 function initializeWorkoutData() {
@@ -165,27 +262,13 @@ function initializeWorkoutData() {
     for (let week = 1; week <= 7; week++) {
         workoutData[week] = {};
         for (let day = 1; day <= 5; day++) {
-            workoutData[week][day] = {};
-            workoutProgram[day].exercises.forEach((exercise, exerciseIndex) => {
-                const adjustedSets = Math.ceil(exercise.sets * weekProgression[week.toString()].setsMultiplier);
-                workoutData[week][day][exerciseIndex] = {
-                    name: exercise.name,
-                    link: exercise.link,
-                    sets: Array(adjustedSets).fill().map(() => ({
-                        weight: 0,
-                        reps: 0,
-                        rpe: weekProgression[week.toString()].rpe,
-                        completed: false
-                    }))
-                };
-            });
+            initializeWorkoutDataForDay(week, day);
         }
     }
-    saveWorkoutData();
 }
 
 // UI Functions
-function switchDay(day) {
+async function switchDay(day) {
     currentDay = day;
     
     // Update active tab
@@ -194,6 +277,9 @@ function switchDay(day) {
     if (activeTab) {
         activeTab.classList.add('active');
     }
+    
+    // Load data for new day
+    await loadWorkoutData();
     
     updateWorkoutDisplay();
     updateProgressSummary();
@@ -235,11 +321,16 @@ function createExerciseCard(exercise, exerciseIndex) {
     const card = document.createElement('div');
     card.className = 'exercise-card';
     
+    // Ensure exercise data exists
+    if (!workoutData[currentWeek] || !workoutData[currentWeek][currentDay] || !workoutData[currentWeek][currentDay][exerciseIndex]) {
+        initializeWorkoutDataForDay(currentWeek, currentDay);
+    }
+    
     const exerciseData = workoutData[currentWeek][currentDay][exerciseIndex];
     const weekData = weekProgression[currentWeek.toString()];
     
     // Check if exercise is collapsed (default to collapsed)
-    const isCollapsed = exerciseData.collapsed !== undefined ? exerciseData.collapsed : true;
+    const isCollapsed = exerciseData && exerciseData.collapsed !== undefined ? exerciseData.collapsed : true;
     
     card.innerHTML = `
         <div class="exercise-header" onclick="toggleExerciseCollapse(${exerciseIndex})">
@@ -348,43 +439,136 @@ function getProgressionIndicator(exerciseIndex, setIndex, exercise) {
 }
 
 // Set Management Functions
-function updateSet(exerciseIndex, setIndex, field, value) {
-    const exercise = workoutProgram[currentDay].exercises[exerciseIndex];
-    const weekData = weekProgression[currentWeek.toString()];
-    
-    // RPE validation based on exercise type and week
-    if (field === 'rpe') {
-        const rpeValue = parseFloat(value);
-        if (exercise.type === 'compound' && rpeValue >= 10) {
-            alert('⚠️ Exercícios básicos (compostos) nunca devem chegar à falha (RPE 10)!\nMantenha RPE máximo de 9 para exercícios compostos.');
-            return;
+async function updateSet(exerciseIndex, setIndex, field, value) {
+    try {
+        console.log(`[DEBUG] Updating set - Exercise: ${exerciseIndex}, Set: ${setIndex}, Field: ${field}, Value: ${value}`);
+        
+        // Validate inputs
+        if (exerciseIndex < 0 || setIndex < 0) {
+            throw new Error(`Invalid indices: exerciseIndex=${exerciseIndex}, setIndex=${setIndex}`);
         }
-        if (exercise.type === 'isolation' && rpeValue >= 10 && currentWeek < 5) {
-            alert('⚠️ Falha (RPE 10) em isoladores apenas nas últimas semanas (5-6)!\nNas primeiras semanas, mantenha RPE máximo de 9.');
-            return;
+        
+        if (!workoutData[currentWeek] || !workoutData[currentWeek][currentDay] || !workoutData[currentWeek][currentDay][exerciseIndex]) {
+            console.error('[ERROR] Workout data structure is invalid');
+            console.error('[ERROR] Current state:', { currentWeek, currentDay, exerciseIndex, workoutData });
+            throw new Error('Workout data not properly initialized');
         }
+        
+        const exerciseData = workoutData[currentWeek][currentDay][exerciseIndex];
+        if (!exerciseData.sets || !exerciseData.sets[setIndex]) {
+            console.error('[ERROR] Set not found');
+            console.error('[ERROR] Exercise structure:', exerciseData);
+            throw new Error(`Set ${setIndex} not found for exercise ${exerciseIndex}`);
+        }
+        
+        const exercise = workoutProgram[currentDay].exercises[exerciseIndex];
+        const weekData = weekProgression[currentWeek.toString()];
+        
+        // RPE validation based on exercise type and week
+        if (field === 'rpe') {
+            const rpeValue = parseFloat(value);
+            if (exercise.type === 'compound' && rpeValue >= 10) {
+                alert('⚠️ Exercícios básicos (compostos) nunca devem chegar à falha (RPE 10)!\nMantenha RPE máximo de 9 para exercícios compostos.');
+                return;
+            }
+            if (exercise.type === 'isolation' && rpeValue >= 10 && currentWeek < 5) {
+                alert('⚠️ Falha (RPE 10) em isoladores apenas nas últimas semanas (5-6)!\nNas primeiras semanas, mantenha RPE máximo de 9.');
+                return;
+            }
+        }
+        
+        // Validate and convert value based on field type
+        let processedValue = value;
+        if (field === 'weight' || field === 'reps') {
+            processedValue = parseFloat(value);
+            if (isNaN(processedValue) || processedValue < 0) {
+                console.warn(`[WARN] Invalid ${field} value: ${value}, setting to 0`);
+                processedValue = 0;
+            }
+        } else if (field === 'rpe') {
+            processedValue = parseFloat(value);
+        }
+        
+        console.log(`[DEBUG] Setting ${field} to ${processedValue} for exercise ${exerciseIndex}, set ${setIndex}`);
+        exerciseData.sets[setIndex][field] = processedValue;
+        
+        // Data will only be saved when user clicks "completar" button
+        updateProgressSummary();
+        
+        // Show progression suggestions after updating
+        showProgressionSuggestion(exerciseIndex, setIndex, exercise);
+        
+        console.log(`[DEBUG] Set update completed successfully`);
+        
+    } catch (error) {
+        console.error('[ERROR] Failed to update set:', error);
+        console.error('[ERROR] Update context:', {
+            exerciseIndex,
+            setIndex,
+            field,
+            value,
+            currentWeek,
+            currentDay,
+            workoutDataExists: !!workoutData[currentWeek]?.[currentDay]?.[exerciseIndex]
+        });
+        showProgressionToast(`Erro ao atualizar ${field}. Tente novamente.`);
     }
-    
-    workoutData[currentWeek][currentDay][exerciseIndex].sets[setIndex][field] = 
-        field === 'rpe' ? parseFloat(value) : (field === 'weight' ? parseFloat(value) : parseInt(value));
-    saveWorkoutData();
-    updateProgressSummary();
-    
-    // Show progression suggestions after updating
-    showProgressionSuggestion(exerciseIndex, setIndex, exercise);
 }
 
-function toggleExerciseCollapse(exerciseIndex) {
+async function toggleExerciseCollapse(exerciseIndex) {
     const exerciseData = workoutData[currentWeek][currentDay][exerciseIndex];
     exerciseData.collapsed = !exerciseData.collapsed;
-    saveWorkoutData();
+    await saveWorkoutData();
     updateWorkoutDisplay();
 }
 
-function toggleSetComplete(exerciseIndex, setIndex) {
+async function toggleSetComplete(exerciseIndex, setIndex) {
     const set = workoutData[currentWeek][currentDay][exerciseIndex].sets[setIndex];
+    const exercise = workoutData[currentWeek][currentDay][exerciseIndex];
+    
     set.completed = !set.completed;
-    saveWorkoutData();
+    
+    // Only save to database when set is marked as completed
+    if (set.completed) {
+        try {
+            console.log(`[DEBUG] Saving completed set - Exercise: ${exerciseIndex}, Set: ${setIndex}`);
+            
+            const response = await fetch('/api/workout/set', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    week: currentWeek,
+                    day: currentDay,
+                    exerciseIndex: exerciseIndex,
+                    setIndex: setIndex,
+                    setData: {
+                        ...set,
+                        exerciseName: exercise.name
+                    }
+                })
+            });
+            
+            if (!response.ok) {
+                const errorText = await response.text();
+                console.error(`[ERROR] Failed to save set: ${response.status} ${response.statusText}`);
+                console.error(`[ERROR] Response body:`, errorText);
+                throw new Error(`Failed to save set: ${response.status} ${response.statusText}`);
+            }
+            
+            const result = await response.json();
+            console.log(`[DEBUG] Set saved successfully:`, result);
+            showProgressionToast('Série salva com sucesso!');
+            
+        } catch (error) {
+            console.error('[ERROR] Error saving set:', error);
+            showProgressionToast('Erro ao salvar série. Verifique a conexão.');
+            // Revert the completion status on error
+            set.completed = false;
+        }
+    }
+    
     updateWorkoutDisplay();
     updateProgressSummary();
 }
@@ -438,18 +622,18 @@ function closeModal() {
     exerciseVideo.innerHTML = '';
 }
 
-function saveExerciseLink() {
+async function saveExerciseLink() {
     const exerciseIndex = parseInt(modal.dataset.exerciseIndex);
     const link = exerciseLink.value.trim();
     
     workoutData[currentWeek][currentDay][exerciseIndex].link = link;
-    saveWorkoutData();
+    await saveWorkoutData();
     
     displayExerciseVideo(link);
 }
 
 // Function to save workout instruction link
-function saveWorkoutLink() {
+async function saveWorkoutLink() {
     const workoutLinkInput = document.getElementById('workout-link');
     const link = workoutLinkInput.value.trim();
     
@@ -457,13 +641,28 @@ function saveWorkoutLink() {
         // Validate URL format
         try {
             new URL(link);
-            // Save to localStorage or your data structure
-            localStorage.setItem(`workout-link-day-${currentDay}`, link);
-            showProgressionToast('Link de instruções salvo com sucesso!');
             
-            // Optional: Open link in new tab
-            if (confirm('Deseja abrir o link agora?')) {
-                window.open(link, '_blank');
+            // Save to database via API
+            const response = await fetch('/api/workout-link', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    day: currentDay,
+                    link: link
+                })
+            });
+            
+            if (response.ok) {
+                showProgressionToast('Link de instruções salvo com sucesso!');
+                
+                // Optional: Open link in new tab
+                if (confirm('Deseja abrir o link agora?')) {
+                    window.open(link, '_blank');
+                }
+            } else {
+                showProgressionToast('Erro ao salvar link. Tente novamente.');
             }
         } catch (e) {
             showProgressionToast('Por favor, insira um link válido (ex: https://...)');
@@ -474,12 +673,20 @@ function saveWorkoutLink() {
 }
 
 // Function to load saved workout link
-function loadWorkoutLink() {
-    const savedLink = localStorage.getItem(`workout-link-day-${currentDay}`);
-    const workoutLinkInput = document.getElementById('workout-link');
-    
-    if (savedLink && workoutLinkInput) {
-        workoutLinkInput.value = savedLink;
+async function loadWorkoutLink() {
+    try {
+        const response = await fetch(`/api/workout-link/${currentDay}`);
+        
+        if (response.ok) {
+            const data = await response.json();
+            const workoutLinkInput = document.getElementById('workout-link');
+            
+            if (workoutLinkInput && data.link) {
+                workoutLinkInput.value = data.link;
+            }
+        }
+    } catch (error) {
+        console.error('Error loading workout link:', error);
     }
 }
 
